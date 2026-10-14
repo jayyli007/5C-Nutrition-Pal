@@ -174,7 +174,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 
-DB_URL = "postgresql://user:password@localhost:5432/postgres" #change this url to reflect the database you want the data to be stsored in
+DB_URL = "postgresql://user:password@localhost:5432/postgres" #change this url to reflect the database you want the data to be stored in
 #user and password should be different, port number could be different too
 TABLE_NAME_FRANK = "menu_items_frank"
 TABLE_NAME_FRARY = "menu_items_frary"
