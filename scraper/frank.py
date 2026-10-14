@@ -7,10 +7,22 @@ The upload section uploads the python data into SQL
 
 If you want to visualize the data in a table, change DB_URL to the correct database url and uncomment the last if statement
 
-Issues that have not yet been fixed (but will be soon):
-filter out all menu items with calories over 1000
-filter out all menu items with no nutritional info (this looks like [null] in SQL, None in python, and NA in the original json string)
-filter by servedate to only include the menu for the current day
+Issues that have not yet been fixed (but can be soon):
+filter by servedate to only include the menu for the current day (this is easy)
+filter out nutrient numbers smaller than 10^-3 to read 0 instead
+
+Items that are filtered out:
+Garlic knot and other items that have nutrients "NA|NA|NA|NA|NA..."
+Salsa bars and other items that have >=1000 calories
+
+Claude analysis on nutrient categories (mostly paraphrased):
+The best-covered columns are calories, fat, saturated fat, cholesterol, sodium, carbs, fiber, sugars, protein, calcium and iron,
+each with data for about 225 of 242 items (in frank_menu_items.json for oct9). Vitamin C and Vitamin A follow with about 195 each.
+I believe that potassium and phosphorus should be dropped in the mapping because they are 0 when they shouldn't be 0, esp in protein high foods
+(we have 18 nutrients to be mapped to 16 in each item)
+Thus, Vitamin D will move over to column 16 in nutrients
+Vitamin A is a bit shaky on column 15 because it doesn't match up with dairy/egg foods which should have high vitamin A,
+but are high for orange and green vegetables as expected
 '''
 
 
@@ -57,8 +69,9 @@ NUTRIENT_LABELS = (
     "Trans Fat (g)~TRF|Cholesterol (mg)~CHO|Sodium (mg)~Na|Carbohydrate (g)~CRB|"
     "Total Dietary Fiber (g)~FIB|Total Sugars (g)~SUG|Added Sugar (g)~SugA|"
     "Protein (g)~PRO|Vitamin C (mg)~vC|Calcium (mg)~CA|Iron (mg)~Fe|"
-    "Vitamin A (mcg RAE)~(rae)|Phosphorus (mg)~PHO|Potassium (mg)~K|Vitamin D(iu)~VITD"
+    "Vitamin A (mcg RAE)~(rae)|Vitamin D(iu)~VITD"
 )
+labels = [entry.split("~")[0] for entry in NUTRIENT_LABELS.split("|")]
 
 #the output style of this function can be changed into anything
 #the structure is: (Dict description + nutrients))
@@ -76,9 +89,14 @@ def parseItem(recipeDict):
         "servingDescription": recipe["@servingDescription"],
     }
  
-    labels = [entry.split("~")[0] for entry in NUTRIENT_LABELS.split("|")]
     if "@nutrients" in recipe:
         values = recipe["@nutrients"].split("|")
+        if all(entry == "NA" for entry in values):
+            print(recipe["@shortName"] + " has empty nutrients data")
+            return None #this is a case where all entries are NA
+        elif values[0] != "NA" and float(values[0]) >= 1000:
+            print(recipe["@shortName"] + " has an abnormal amount of calories")
+            return None #this is a case where calories are 4-digit+
     else:
         print(recipe["@shortName"] + " has no nutrients data")
         return None #the item does not have nutrients data, so we skip it
@@ -88,7 +106,7 @@ def parseItem(recipeDict):
         if i < len(values) and values[i] != "NA":
             info_nutrients[label] = float(values[i])
         else:
-            info_nutrients[label] = None
+            info_nutrients[label] = 0
  
     return info_nutrients
 
@@ -124,7 +142,14 @@ def parseLocation(locationDict):
     if isinstance(itemsFile, list):
         returnItems = [{**parseItem(item), **info} for item in itemsFile if parseItem(item) != None]
         return returnItems
-    elif isinstance(itemsFile, dict):
+    elif isinstance(itemsFile, dict) and "@nutrients" in itemsFile:
+        if parseItem(itemsFile) != None:
+            returnItems = [{**parseItem(itemsFile), **info}]
+            return returnItems
+        #this is a complicated case
+        #some location labels in frank will have only one item, thus itemsFile is just a dict of one item instead of a list of dicts with multiple items
+        #however, some location labels will just be a dict and have 0 items, which is why we need to differentiate these two cases
+    else:
         print("Skipped over " + itemsFile["@category"] + " in " + location["@mealperiodname"] + " on " + location["@servedate"] +
               " due to it being a category without any items")
         return None
@@ -150,6 +175,7 @@ from psycopg.types.json import Jsonb
 
 
 DB_URL = "postgresql://user:password@localhost:5432/postgres" #change this url to reflect the database you want the data to be stsored in
+#user and password should be different, port number could be different too
 TABLE_NAME_FRANK = "menu_items_frank"
 TABLE_NAME_FRARY = "menu_items_frary"
 REPLACE_TABLE = True   # False = keep existing rows and append new ones
