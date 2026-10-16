@@ -9,9 +9,9 @@ Some nutritional values are < 1 or < 5, so column types are all text and
 we can figure out what to do with that later
 These do not have Vitamin A, Vitamin C, Vitamin D, Calcium, or Iron
 All serving units are ounces (oz)
-Malott and McConnel are not working yet, their html seems to be slightly different
 Meals are given as lists, [Breakfast, Lunch, Dinner], so each item is only listed once
 but can be included in different meals
+McConnel has large gaps in nutrition info for particular locations (like comfort, global, etc)
 
 Change DB_URL to the correct database and uncomment lines at the bottom to upload data
 '''
@@ -23,8 +23,8 @@ import re
 #extraction---------------------------------------
 
 url_collins = "https://collins-cmc.cafebonappetit.com/cafe/collins/"
-url_malott = "https://collins-cmc.cafebonappetit.com/cafe/malott/"
-url_mcconnel = "https://collins-cmc.cafebonappetit.com/cafe/mcconnel/"
+url_malott = "https://scripps.cafebonappetit.com/"
+url_mcconnel = "https://pitzer.cafebonappetit.com/"
 
 
 
@@ -52,10 +52,10 @@ def cleanJSON(url):
 output_collins = cleanJSON(url_collins)
 date = output_collins[1]
 menu_collins = output_collins[0]
-# output_malott = cleanJSON(url_malott)
-# menu_malott = output_malott[0]
-# output_mcconnel = cleanJSON(url_mcconnel)
-# menu_mcconnel = output_mcconnel[0]
+output_malott = cleanJSON(url_malott)
+menu_malott = output_malott[0]
+output_mcconnel = cleanJSON(url_mcconnel)
+menu_mcconnel = output_mcconnel[0]
 
 #parsing---------------------------------------
 
@@ -121,8 +121,8 @@ def entireMenu(menu):
 
 #print(entireMenu(menu_collins))
 parsedMenu_collins = entireMenu(menu_collins)
-#parsedMenu_malott = entireMenu(menu_malott)
-#parsedMenu_mcconnel = entireMenu(menu_mcconnel)
+parsedMenu_malott = entireMenu(menu_malott)
+parsedMenu_mcconnel = entireMenu(menu_mcconnel)
 
 
 
@@ -131,7 +131,7 @@ parsedMenu_collins = entireMenu(menu_collins)
 from collections import Counter
 import psycopg
 
-DB_URL = "postgresql://user:password@localhost:5432/postgres"
+DB_URL = "postgresql://postgres:rank35Sprout@localhost:5432/postgres"
 TABLE = "menu_items_collins"
 
 
