@@ -27,10 +27,6 @@ export const BACKGROUNDS = [
 
 export type BackgroundId = (typeof BACKGROUNDS)[number]['id']
 
-export const GOALS = ['Eat balanced', 'Build muscle', 'Fuel my sport', 'Lose weight', 'Just track habits'] as const
-
-export const MEALS = ['Breakfast', 'Brunch', 'Lunch', 'Dinner', 'Late-night'] as const
-
 export const DIETARY_RESTRICTIONS = [
   'Vegetarian',
   'Vegan',
@@ -45,15 +41,14 @@ export const DIETARY_RESTRICTIONS = [
 export const ALLERGENS = ['Milk', 'Eggs', 'Peanuts', 'Tree nuts', 'Fish', 'Shellfish', 'Wheat', 'Soy', 'Sesame'] as const
 
 export const TRACKABLES = [
-  { id: 'calories', label: 'Calories', hint: 'kcal' },
-  { id: 'protein', label: 'Protein', hint: 'g' },
-  { id: 'carbs', label: 'Carbohydrates', hint: 'g' },
-  { id: 'fat', label: 'Fats', hint: 'g' },
-  { id: 'fiber', label: 'Fiber', hint: 'g' },
-  { id: 'sugar', label: 'Sugar', hint: 'g' },
-  { id: 'sodium', label: 'Sodium', hint: 'mg' },
-  { id: 'satFat', label: 'Saturated fat', hint: 'g' },
-  { id: 'cholesterol', label: 'Cholesterol', hint: 'mg' },
+  { id: 'calories', label: 'Calories', unit: 'kcal', color: '#f2803a' },
+  { id: 'protein', label: 'Protein', unit: 'grams', color: '#e5484d' },
+  { id: 'carbs', label: 'Carbs', unit: 'grams', color: '#f5c518' },
+  { id: 'fat', label: 'Fat', unit: 'grams', color: '#30a46c' },
+  { id: 'fiber', label: 'Fiber', unit: 'grams', color: '#3b82f6' },
+  { id: 'sugar', label: 'Sugar', unit: 'grams', color: '#c86fd8' },
+  { id: 'sodium', label: 'Sodium', unit: 'milligrams', color: '#8b8d98' },
+  { id: 'satFat', label: 'Saturated fat', unit: 'grams', color: '#12a594' },
 ] as const
 
 export type TrackableId = (typeof TRACKABLES)[number]['id']
@@ -64,12 +59,12 @@ export interface OnboardingData {
   firstName: string
   college?: College
   background: BackgroundId
-  goal?: (typeof GOALS)[number]
-  meals: string[]
   dietary: string[]
   allergens: string[]
   otherAllergens: string
   tracking: TrackableId[]
+  /** "Just log meals, no numbers": overrides tracking. */
+  justMeals: boolean
 }
 
 export const initialData: OnboardingData = {
@@ -77,12 +72,11 @@ export const initialData: OnboardingData = {
   password: '',
   firstName: '',
   background: 'sunrise',
-  goal: 'Eat balanced',
-  meals: ['Breakfast', 'Lunch', 'Dinner'],
   dietary: [],
   allergens: [],
   otherAllergens: '',
   tracking: ['calories', 'protein', 'carbs', 'fat'],
+  justMeals: false,
 }
 
 export function toggle<T>(list: T[], item: T): T[] {

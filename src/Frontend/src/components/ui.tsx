@@ -36,25 +36,48 @@ export function Title({ children, sub }: { children: ReactNode; sub?: ReactNode 
   )
 }
 
-export function Label({ children, hint }: { children: ReactNode; hint?: string }) {
+export function Label({ children, hint, sub }: { children: ReactNode; hint?: string; sub?: string }) {
   return (
-    <p className="mt-6 mb-2.5 text-[15px] font-semibold">
-      {children}
-      {hint && <span className="font-normal text-muted"> {hint}</span>}
-    </p>
+    <div className="mt-6 mb-2.5">
+      <p className="text-[15px] font-semibold">
+        {children}
+        {hint && <span className="font-normal text-muted"> {hint}</span>}
+      </p>
+      {sub && <p className="mt-0.5 text-[13px] text-muted">{sub}</p>}
+    </div>
   )
 }
 
-export function Chip({ selected, onClick, children, className = '' }: { selected: boolean; onClick: () => void; children: ReactNode; className?: string }) {
+export function Chip({
+  selected,
+  onClick,
+  children,
+  tone = 'default',
+  className = '',
+}: {
+  selected: boolean
+  onClick: () => void
+  children: ReactNode
+  /** "danger" shows a selected chip as a red warning, used for allergens. */
+  tone?: 'default' | 'danger'
+  className?: string
+}) {
+  const selectedClass = tone === 'danger' ? 'border-c-red bg-c-red/10 text-c-red' : 'border-ink bg-ink text-white'
   return (
     <button
       type="button"
       aria-pressed={selected}
       onClick={onClick}
-      className={`min-h-11 rounded-full border px-4 text-[15px] font-medium transition active:scale-[0.97] ${
-        selected ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink'
+      className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-4 text-[15px] font-medium transition active:scale-[0.97] ${
+        selected ? selectedClass : 'border-line bg-white text-ink'
       } ${className}`}
     >
+      {selected && tone === 'danger' && (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9.5" />
+          <path d="M12 7.5v5M12 16.2v.3" />
+        </svg>
+      )}
       {children}
     </button>
   )
