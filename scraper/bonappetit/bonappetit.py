@@ -19,6 +19,7 @@ Change DB_URL to the correct database and uncomment lines at the bottom to uploa
 import requests
 import json
 import re
+import os
 
 #extraction---------------------------------------
 
@@ -85,7 +86,8 @@ def parseItem(itemDict):
         "Carbohydrates (g)": None,
         "Total Dietary Fiber (g)": None,
         "Total Sugars (g)": None,
-        "servedate": date
+        "Protein (g)": None,
+        "servedate": item["date"]
         }
         return info #for items without any nutrition info
     
@@ -105,10 +107,10 @@ def parseItem(itemDict):
         "Carbohydrates (g)": nutrition["carbohydrateContent"]["value"],
         "Total Dietary Fiber (g)": nutrition["fiberContent"]["value"],
         "Total Sugars (g)": nutrition["sugarContent"]["value"],
-        # "Protein (g)": nutrition["proteinContent"]["value"],
+        "Protein (g)": nutrition["proteinContent"]["value"],
         # "Vitamin C (mg)": item["vitaminC"][:-2],
         # "Calcium (mg)": item["calcium"][:-2],
-        "servedate": date
+        "servedate": item["date"]
     }
     return info
 
@@ -131,7 +133,7 @@ parsedMenu_mcconnel = entireMenu(menu_mcconnel)
 from collections import Counter
 import psycopg
 
-DB_URL = "postgresql://postgres:rank35Sprout@localhost:5432/postgres"
+DB_URL = os.environ["DATABASE_URL"]
 TABLE = "menu_items_collins"
 
 
@@ -172,7 +174,7 @@ def load(data, TABLE, db_url=DB_URL):
     print(f"Inserted {len(rows)} rows into {TABLE}.")
 
 
-# if __name__ == "__main__":
-#     load(parsedMenu_collins, "menu_items_collins")
-#     load(parsedMenu_malott, "menu_items_malott")
-#     load(parsedMenu_mcconnel, "menu_items_mcconnel")
+if __name__ == "__main__":
+    load(parsedMenu_collins, "menu_items_collins")
+    load(parsedMenu_malott, "menu_items_malott")
+    load(parsedMenu_mcconnel, "menu_items_mcconnel")
