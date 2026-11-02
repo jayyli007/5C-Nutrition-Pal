@@ -100,8 +100,8 @@ def parseItem(itemDict):
         "serving": nutrition["servingSize"]["value"] + " " + nutrition["servingSize"]["unit"],
         "Calories (kcal)": nutrition["calories"]["value"],
         "Total Lipid/Fat (g)": nutrition["fatContent"]["value"],
-        "Saturated fatty acid (g)": nutrition["saturatedFatContent"]["value"],
-        "Trans Fat (g)": nutrition["transFatContent"]["value"],
+        #"Saturated fatty acid (g)": nutrition["saturatedFatContent"]["value"],
+        #"Trans Fat (g)": nutrition["transFatContent"]["value"],
         "Cholesterol (mg)": nutrition["cholesterolContent"]["value"], #other jsons use grams, not mg
         "Sodium (mg)": nutrition["sodiumContent"]["value"],
         "Carbohydrates (g)": nutrition["carbohydrateContent"]["value"],
@@ -174,7 +174,7 @@ def load(data, TABLE, db_url=DB_URL):
     print(f"Inserted {len(rows)} rows into {TABLE}.")
 
 
-if __name__ == "__main__":
-    load(parsedMenu_collins, "menu_items_collins")
-    load(parsedMenu_malott, "menu_items_malott")
-    load(parsedMenu_mcconnel, "menu_items_mcconnel")
+# if __name__ == "__main__":
+#     load(parsedMenu_collins, "menu_items_collins")
+#     load(parsedMenu_malott, "menu_items_malott")
+#     load(parsedMenu_mcconnel, "menu_items_mcconnel")
