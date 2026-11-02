@@ -16,10 +16,12 @@ McConnel has large gaps in nutrition info for particular locations (like comfort
 Change DB_URL to the correct database and uncomment lines at the bottom to upload data
 '''
 
-import requests
-import json
-import re
 import os
+import json
+from datetime import date
+from pathlib import Path
+import requests
+import re
 
 #extraction---------------------------------------
 
@@ -174,7 +176,7 @@ def load(data, TABLE, db_url=DB_URL):
     print(f"Inserted {len(rows)} rows into {TABLE}.")
 
 
-# if __name__ == "__main__":
-#     load(parsedMenu_collins, "menu_items_collins")
-#     load(parsedMenu_malott, "menu_items_malott")
-#     load(parsedMenu_mcconnel, "menu_items_mcconnel")
+if __name__ == "__main__":
+    load(parsedMenu_collins, "menu_items_collins")
+    load(parsedMenu_malott, "menu_items_malott")
+    load(parsedMenu_mcconnel, "menu_items_mcconnel")
