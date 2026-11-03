@@ -14,6 +14,10 @@ but can be included in different meals
 McConnel has large gaps in nutrition info for particular locations (like comfort, global, etc)
 
 Change DB_URL to the correct database and uncomment lines at the bottom to upload data
+
+No peanut yet, other allergens and dietary restrictions are found in the json
+Shellfish is very rare but it should be working as well
+Mcconnel's json does not track any allergens/dietary restrictions besides gluten free, vegan, and vegetarian
 '''
 
 import os
@@ -65,33 +69,66 @@ menu_mcconnel = output_mcconnel[0]
 test1 = next(iter(menu_collins.values()))
 #print(test1)
 
+# Diet restrictions + allergens, always added as boolean columns.
+FLAG_COLUMNS = [
+    "Vegan", "Vegetarian", "Gluten Free",
+    "Peanut", "Tree Nut", "Milk", "Egg", "Soy",
+    "Sesame", "Fish", "Shellfish", "Wheat",
+]
+
+# Bon Appétit label -> column name in SQL
+LABEL_MAP = {
+    "Made without Gluten-Containing Ingredients": "Gluten Free",
+    "Wheat/Gluten": "Wheat"
+}
+
+def lt_to_zero(v):
+    """Turn values like '<5', '< 1' into 0; leave everything else as-is."""
+    if isinstance(v, str) and v.strip().startswith("<"):
+        return 0
+    return v
+
+def nv(nutrition, key):
+    """Value of a nutrient field, or None if the field is missing."""
+    return (nutrition.get(key) or {}).get("value")
+
 def parseItem(itemDict):
     '''parse one item in the json file
     returns a dict of the important description and nutrient columns'''
     item = itemDict
     nutrition = item["nutrition_details"]
+    allergens = item["cor_icon"]
+    allergensToUpdate = {}
+    if allergens != []:
+        for value in allergens.values():
+            col = LABEL_MAP.get(value, value)  # rename if mapped, else keep as-is
+            if col in FLAG_COLUMNS:
+                allergensToUpdate[col] = True
 
-    if nutrition == {}:
-        info = {
-        "itemID": item["id"],
-        "category": item["station"],
-        "meal": item["meals"],
-        "description": item["description"],
-        "shortName": item["label"],
-        "serving": None,
-        "Calories (kcal)": None,
-        "Total Lipid/Fat (g)": None,
-        "Saturated fatty acid (g)": None,
-        "Trans Fat (g)": None,
-        "Cholesterol (mg)": None,
-        "Sodium (mg)": None,
-        "Carbohydrates (g)": None,
-        "Total Dietary Fiber (g)": None,
-        "Total Sugars (g)": None,
-        "Protein (g)": None,
-        "servedate": item["date"]
-        }
-        return info #for items without any nutrition info
+    serving = nutrition.get("servingSize") or {}
+    serving_value = serving.get("value")
+    serving_unit = serving.get("unit")
+
+    # if nutrition == {}:
+    #     info = {
+    #     "itemID": item["id"],
+    #     "category": item["station"],
+    #     "meal": item["meals"],
+    #     "description": item["description"],
+    #     "shortName": item["label"],
+    #     "serving": None,
+    #     "Calories (kcal)": None,
+    #     "Total Lipid/Fat (g)": None,
+    #     #"Saturated fatty acid (g)": None,
+    #     #"Trans Fat (g)": None,
+    #     "Cholesterol (mg)": None,
+    #     "Sodium (mg)": None,
+    #     "Carbohydrates (g)": None,
+    #     "Total Dietary Fiber (g)": None,
+    #     "Total Sugars (g)": None,
+    #     "Protein (g)": None,
+    #     "servedate": item["date"]
+    #     }
     
     info = {
         "itemID": item["id"],
@@ -99,21 +136,25 @@ def parseItem(itemDict):
         "meal": item["meals"],
         "description": item["description"],
         "shortName": item["label"],
-        "serving": nutrition["servingSize"]["value"] + " " + nutrition["servingSize"]["unit"],
-        "Calories (kcal)": nutrition["calories"]["value"],
-        "Total Lipid/Fat (g)": nutrition["fatContent"]["value"],
-        #"Saturated fatty acid (g)": nutrition["saturatedFatContent"]["value"],
-        #"Trans Fat (g)": nutrition["transFatContent"]["value"],
-        "Cholesterol (mg)": nutrition["cholesterolContent"]["value"], #other jsons use grams, not mg
-        "Sodium (mg)": nutrition["sodiumContent"]["value"],
-        "Carbohydrates (g)": nutrition["carbohydrateContent"]["value"],
-        "Total Dietary Fiber (g)": nutrition["fiberContent"]["value"],
-        "Total Sugars (g)": nutrition["sugarContent"]["value"],
-        "Protein (g)": nutrition["proteinContent"]["value"],
-        # "Vitamin C (mg)": item["vitaminC"][:-2],
-        # "Calcium (mg)": item["calcium"][:-2],
+        "serving": f"{serving_value} {serving_unit}" if serving_value else None,
+        "Calories (kcal)": nv(nutrition, "calories"),
+        "Total Lipid/Fat (g)": nv(nutrition, "fatContent"),
+        #"Saturated fatty acid (g)": nv(nutrition, "saturatedFatContent"),
+        #"Trans Fat (g)": nv(nutrition, "transFatContent"),
+        "Cholesterol (mg)": nv(nutrition, "cholesterolContent"), #other jsons use grams, not mg
+        "Sodium (mg)": nv(nutrition, "sodiumContent"),
+        "Carbohydrates (g)": nv(nutrition, "carbohydrateContent"),
+        "Total Dietary Fiber (g)": nv(nutrition, "fiberContent"),
+        "Total Sugars (g)": nv(nutrition, "sugarContent"),
+        "Protein (g)": nv(nutrition, "proteinContent"),
         "servedate": item["date"]
     }
+    NON_NUTRIENT = {"itemID", "category", "meal", "description", "shortName", "serving", "servedate"}
+    for k, v in info.items():
+        if k not in NON_NUTRIENT:
+            info[k] = lt_to_zero(v)
+
+    info.update(allergensToUpdate)
     return info
 
 #print(parseItem(test1))
@@ -132,6 +173,7 @@ parsedMenu_mcconnel = entireMenu(menu_mcconnel)
 
 #uploading---------------------------------------
 
+import os
 from collections import Counter
 import psycopg
 
@@ -144,28 +186,48 @@ def q(name):
     return '"' + name.replace('"', '""') + '"'
 
 
+def split_record(rec):
+    """Separate flag keys from the rest; missing flags default to False."""
+    base = {k: v for k, v in rec.items() if k not in FLAG_COLUMNS}
+    flags = {c: bool(rec.get(c, False)) for c in FLAG_COLUMNS}
+    return base, flags
+
+
 def load(data, TABLE, db_url=DB_URL):
-    key_lists = [list(rec.keys()) for rec in data]
+    split = [split_record(rec) for rec in data]
+    bases = [b for b, _ in split]
+
+    # Original column logic, applied to the non-flag keys only.
+    key_lists = [list(rec.keys()) for rec in bases]
     if len({len(keys) for keys in key_lists}) != 1:
-        raise ValueError("Records do not all have the same number of keys.")
+        all_keys = set().union(*key_lists)
+        uneven = sorted(k for k in all_keys if sum(k in keys for keys in key_lists) < len(key_lists))
+        raise ValueError(f"Records do not all have the same number of keys. Uneven keys: {uneven!r}")
     columns = [Counter(keys).most_common(1)[0][0] for keys in zip(*key_lists)]
 
     types = ["TEXT"] * len(columns)
     types[0] += " PRIMARY KEY"  # first key (itemID) is the primary key
 
+    all_columns = columns + FLAG_COLUMNS
+    all_types = types + ["BOOLEAN NOT NULL DEFAULT FALSE"] * len(FLAG_COLUMNS)
+
     drop_sql = f"DROP TABLE IF EXISTS {q(TABLE)};"
     create_sql = "CREATE TABLE IF NOT EXISTS {} (\n    {}\n);".format(
         q(TABLE),
-        ",\n    ".join(f"{q(c)} {t}" for c, t in zip(columns, types)),
+        ",\n    ".join(f"{q(c)} {t}" for c, t in zip(all_columns, all_types)),
     )
     insert_sql = (
-        f"INSERT INTO {q(TABLE)} ({', '.join(q(c) for c in columns)}) "
-        f"VALUES ({', '.join(['%s'] * len(columns))}) "
+        f"INSERT INTO {q(TABLE)} ({', '.join(q(c) for c in all_columns)}) "
+        f"VALUES ({', '.join(['%s'] * len(all_columns))}) "
         f"ON CONFLICT ({q(columns[0])}) DO NOTHING"
     )
 
-    # Everything becomes a string; None stays NULL.
-    rows = [tuple(None if v is None else str(v) for v in rec.values()) for rec in data]
+    # Everything else becomes a string; None stays NULL. Flags are real booleans.
+    rows = [
+        tuple(None if v is None else str(v) for v in base.values())
+        + tuple(flags[c] for c in FLAG_COLUMNS)
+        for base, flags in split
+    ]
 
     # psycopg 3: the `with` block commits and closes the connection.
     with psycopg.connect(db_url) as conn:
