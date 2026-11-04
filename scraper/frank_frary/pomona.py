@@ -30,6 +30,7 @@ but are high for orange and green vegetables as expected
 
 import requests
 import json
+import os
 
 #extraction--------------------------------
 
@@ -174,7 +175,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 
-DB_URL = "postgresql://user:password@localhost:5432/postgres" #change this url to reflect the database you want the data to be stored in
+DB_URL = os.environ["DATABASE_URL"] #change this url to reflect the database you want the data to be stored in
 #user and password should be different, port number could be different too
 TABLE_NAME_FRANK = "menu_items_frank"
 TABLE_NAME_FRARY = "menu_items_frary"
@@ -186,7 +187,6 @@ NAME_KEY = "shortName"
 NAME_FALLBACKS = ["short_name", "name", "item_name", "description"]
 MENU_FRANK = entireMenu(menu_frank)
 MENU_FRARY = entireMenu(menu_frary)
-
 
 def get_name(item):
     for key in [NAME_KEY, *NAME_FALLBACKS]:
@@ -275,9 +275,9 @@ def load_menus(menus, table, db_url=DB_URL, replace=REPLACE_TABLE):
     print(f"Inserted {len(rows)} rows into {table} with {len(keys)} columns.")
     return len(rows)
 
-# if __name__ == "__main__":
-#     load_menus(MENU_FRANK, TABLE_NAME_FRANK)
-#     load_menus(MENU_FRARY, TABLE_NAME_FRARY)
+if __name__ == "__main__":
+    load_menus(MENU_FRANK, TABLE_NAME_FRANK)
+    load_menus(MENU_FRARY, TABLE_NAME_FRARY)
 
 #uncomment this last if statement to load in the data from python to SQL to visualize it
 #you will need to change the url to match the desired SQL server
