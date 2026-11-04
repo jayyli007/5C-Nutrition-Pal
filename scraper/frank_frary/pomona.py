@@ -23,13 +23,20 @@ I believe that potassium and phosphorus should be dropped in the mapping because
 Thus, Vitamin D will move over to column 16 in nutrients
 Vitamin A is a bit shaky on column 15 because it doesn't match up with dairy/egg foods which should have high vitamin A,
 but are high for orange and green vegetables as expected
+
+Cut out all unnecessary macronutrients and added in allergens & dietary restrictions
+Filtered items for today's menu
 '''
 
 
 
-
+import os
 import requests
 import json
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+today = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y%m%d")
 
 #extraction--------------------------------
 
@@ -72,6 +79,11 @@ NUTRIENT_LABELS = (
     "Vitamin A (mcg RAE)~(rae)|Vitamin D(iu)~VITD"
 )
 labels = [entry.split("~")[0] for entry in NUTRIENT_LABELS.split("|")]
+excluded = ["Saturated", "Trans", "Added", "Vitamin", "Calcium", "Iron"]
+excluded_indices = [i for i, s in enumerate(labels)
+           if any(sub in s for sub in excluded)]
+labels = [label for label in labels if not any(ex in label for ex in excluded)] #gets rid of the nutrients above
+
 
 #the output style of this function can be changed into anything
 #the structure is: (Dict description + nutrients))
@@ -79,7 +91,6 @@ def parseItem(recipeDict):
     '''recipeDict is one of the elements from the line "recipe" : {...}
     each dict is a specific menu item'''
     recipe = recipeDict
- 
     info = {
         "itemID": recipe["@id"],
         "category": recipe["@category"],
@@ -91,31 +102,72 @@ def parseItem(recipeDict):
  
     if "@nutrients" in recipe:
         values = recipe["@nutrients"].split("|")
+        assert len(values) == 16 #check if the list is consistently 16 for every item
+        excluded = set(excluded_indices)
+        values = [v for i, v in enumerate(values) if i not in excluded]
+        assert len(values) == 16 - len(excluded_indices) #now check if the length updated
         if all(entry == "NA" for entry in values):
             print(recipe["@shortName"] + " has empty nutrients data")
-            return None #this is a case where all entries are NA
+            #this is a case where all entries are NA
+            info.update({label: None for label in labels})
+            #return info
         elif values[0] != "NA" and float(values[0]) >= 1000:
             print(recipe["@shortName"] + " has an abnormal amount of calories")
-            return None #this is a case where calories are 4-digit+
+            #this is a case where calories are above 1000
+            info.update({label: None for label in labels})
+            #return info
+        else:
+            for i, label in enumerate(labels):
+                if values[i] == "NA":
+                    info[label] = None
+                else:
+                    info[label] = float(values[i])
+            #return info
+        
+        #add dietary restrictions/allergens
+        included_allergens = ["Peanut", "Tree Nut" , "Milk" , "Egg" , "Soy", "Sesame",
+                              "Fish", "Shellfish", "Wheat"]
+        allergensJSON = recipe["allergens"]["allergen"] #this is a list of dicts
+        TreeNutOr = False
+        for allergen in allergensJSON:
+            if "Tree Nut" in allergen["@id"] and allergen.get("#text", "").strip().lower() == "yes":
+                    TreeNutOr = True
+                    break
+        allergens = {
+            allergen["@id"]: allergen.get("#text", "").strip().lower() == "yes"
+            for allergen in allergensJSON if allergen["@id"] in included_allergens
+        }
+        info.update(allergens)
+
+        included_dietary = ["Vegan, Vegetarian, Gluten Free"]
+        dietaryJSON = recipe["dietaryChoices"]["dietaryChoice"]
+        dietaries = {
+            dietary["@id"]: dietary.get("#text", "").strip().lower() == "yes"
+            for dietary in dietaryJSON if dietary["@id"] in included_dietary
+        }
+        info.update(dietaries)
+
     else:
         print(recipe["@shortName"] + " has no nutrients data")
-        return None #the item does not have nutrients data, so we skip it
+        info = None #the item does not have nutrients data, so we skip it
+
+    return info
  
-    info_nutrients = info
-    for i, label in enumerate(labels):
-        if i < len(values) and values[i] != "NA":
-            info_nutrients[label] = float(values[i])
-        else:
-            info_nutrients[label] = 0
+    # info_nutrients = info
+    # for i, label in enumerate(labels):
+    #     if i < len(values) and values[i] != "NA":
+    #         info_nutrients[label] = float(values[i])
+    #     else:
+    #         info_nutrients[label] = 0
  
-    return info_nutrients
+    # return info_nutrients
 
 #testing the first item in the json
 #print(parseItem(testItem))
 
-testLocation0 = menu_frank[0]
-testLocation1 = menu_frank[1]
-testLocation2 = menu_frank[2]
+# testLocation0 = menu_frank[0]
+# testLocation1 = menu_frank[1]
+# testLocation2 = menu_frank[2]
 
 #I will leave the parsers like this until we know which data types we want to return
 #and if we decide on a database to store this data
@@ -140,12 +192,14 @@ def parseLocation(locationDict):
 
 
     if isinstance(itemsFile, list):
-        returnItems = [{**parseItem(item), **info} for item in itemsFile if parseItem(item) != None]
+        parsed = (parseItem(item) for item in itemsFile)
+        returnItems = [{**p, **info} for p in parsed if p is not None]
         return returnItems
     elif isinstance(itemsFile, dict) and "@nutrients" in itemsFile:
-        if parseItem(itemsFile) != None:
-            returnItems = [{**parseItem(itemsFile), **info}]
-            return returnItems
+        p = parseItem(itemsFile)
+        if p is not None:
+            return [{**p, **info}]
+        return None
         #this is a complicated case
         #some location labels in frank will have only one item, thus itemsFile is just a dict of one item instead of a list of dicts with multiple items
         #however, some location labels will just be a dict and have 0 items, which is why we need to differentiate these two cases
@@ -162,8 +216,12 @@ def parseLocation(locationDict):
 
 
 def entireMenu(entireMenu):
-    return [parseLocation(location) for location in entireMenu if parseLocation(location) != None]
-
+    toReturn = []
+    for location in entireMenu:
+        parsed = parseLocation(location)
+        if parsed != None and parsed != [] and parsed[0]["servedate"] == today:
+            toReturn = toReturn + parsed
+    return toReturn
 
 #upload----------------------------------------------------------------
 import re
@@ -174,7 +232,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 
-DB_URL = "postgresql://user:password@localhost:5432/postgres" #change this url to reflect the database you want the data to be stored in
+DB_URL = os.environ["DATABASE_URL"] #change this url to reflect the database you want the data to be stored in
 #user and password should be different, port number could be different too
 TABLE_NAME_FRANK = "menu_items_frank"
 TABLE_NAME_FRARY = "menu_items_frary"
@@ -211,7 +269,7 @@ def load_menus(menus, table, db_url=DB_URL, replace=REPLACE_TABLE):
 
     # Flatten the list of menus into one list of item dicts.
     # (If MENUS is already a flat list of dicts, use: items = list(menus))
-    items = [item for menu in menus for item in menu]
+    items = list(menus)
     if not items:
         print("No rows to insert.")
         return 0
@@ -275,9 +333,9 @@ def load_menus(menus, table, db_url=DB_URL, replace=REPLACE_TABLE):
     print(f"Inserted {len(rows)} rows into {table} with {len(keys)} columns.")
     return len(rows)
 
-# if __name__ == "__main__":
-#     load_menus(MENU_FRANK, TABLE_NAME_FRANK)
-#     load_menus(MENU_FRARY, TABLE_NAME_FRARY)
+if __name__ == "__main__":
+    load_menus(MENU_FRANK, TABLE_NAME_FRANK)
+    load_menus(MENU_FRARY, TABLE_NAME_FRARY)
 
 #uncomment this last if statement to load in the data from python to SQL to visualize it
 #you will need to change the url to match the desired SQL server
