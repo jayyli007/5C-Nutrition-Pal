@@ -1,94 +1,140 @@
 import { useEffect, useState } from 'react'
-import { Screen } from './components/ui'
-import { BACKGROUNDS, TRACKABLES, initialData, type OnboardingData } from './onboarding'
+import type { Tab } from './components/app'
+import { initialData, type Meal, type OnboardingData } from './onboarding'
 import { Background } from './screens/Background'
 import { DietAllergens } from './screens/DietAllergens'
+import { HallMenu } from './screens/HallMenu'
+import { LogStart } from './screens/LogStart'
+import { Me } from './screens/Me'
 import { NameCollege } from './screens/NameCollege'
+import { OwnFood } from './screens/OwnFood'
 import { SignUp } from './screens/SignUp'
+import { Stats } from './screens/Stats'
+import { Today } from './screens/Today'
 import { Tracking } from './screens/Tracking'
+import { seedDemo } from './demo'
+import { mealForNow, useAppState, withoutPassword, type LogEntry, type MyFood, type Profile } from './store'
 
 // Steps after sign-up, in order; the progress bar counts these.
 const STEPS = [NameCollege, Background, Tracking, DietAllergens]
 
+type Route =
+  | { name: 'signup' }
+  | { name: 'onboarding'; step: number }
+  | { name: Tab }
+  | { name: 'log'; meal: Meal }
+  | { name: 'hall'; meal: Meal }
+  | { name: 'own'; meal: Meal }
+
 export default function App() {
-  const [data, setData] = useState<OnboardingData>(initialData)
-  // 0 = sign up, 1..STEPS.length = onboarding steps, past that = done
-  const [index, setIndex] = useState(0)
-  const update = (patch: Partial<OnboardingData>) => setData((d) => ({ ...d, ...patch }))
-  const next = () => setIndex((i) => i + 1)
-  const back = () => setIndex((i) => Math.max(0, i - 1))
+  const [state, setState] = useAppState()
+  const [route, setRoute] = useState<Route>(() => (state.signedIn ? { name: 'today' } : { name: 'signup' }))
+  // Onboarding answers live here until the last step, so the password never reaches storage.
+  const [draft, setDraft] = useState<OnboardingData>(() => ({ ...initialData, ...state.profile, password: '' }))
 
   useEffect(() => {
     window.scrollTo(0, 0)
-  }, [index])
+  }, [route])
 
-  if (index === 0) return <SignUp data={data} update={update} onNext={next} />
+  // Visit /?demo to fill two weeks of sample meals, handy for previewing Today and Stats.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (!params.has('demo')) return
+    setState((s) => seedDemo(s))
+    setRoute({ name: 'today' })
+    window.history.replaceState(null, '', window.location.pathname)
+  }, [setState])
 
-  const Step = STEPS[index - 1]
-  if (Step) return <Step data={data} update={update} onNext={next} onBack={back} step={index} total={STEPS.length} />
+  const go = (r: Route) => setRoute(r)
+  const updateProfile = (patch: Partial<Profile>) => setState((s) => ({ ...s, profile: { ...s.profile, ...patch } }))
+  const addLogs = (entries: LogEntry[]) => setState((s) => ({ ...s, logs: [...s.logs, ...entries] }))
+  const saveFood = (food: MyFood) => setState((s) => ({ ...s, myFoods: [food, ...s.myFoods.filter((f) => f.name.toLowerCase() !== food.name.toLowerCase())] }))
+  const removeLog = (id: string) => setState((s) => ({ ...s, logs: s.logs.filter((l) => l.id !== id) }))
+  const onTab = (t: Tab) => go({ name: t })
 
-  return <Done data={data} onRestart={() => setIndex(1)} />
-}
-
-/** One ring per tracked nutrient, as they'll appear on Today. Fill amounts are placeholders. */
-function Rings({ colors }: { colors: string[] }) {
-  const width = Math.max(4, Math.min(9, 40 / colors.length))
-  return (
-    <svg viewBox="0 0 100 100" className="size-44" aria-hidden="true">
-      {colors.map((color, i) => {
-        const r = 45 - width / 2 - i * (width + 2)
-        const c = 2 * Math.PI * r
-        const pct = [0.72, 0.55, 0.85, 0.4, 0.65, 0.5, 0.78, 0.35][i % 8]
-        return (
-          <g key={color} transform="rotate(-90 50 50)">
-            <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeOpacity="0.18" strokeWidth={width} />
-            <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeDasharray={`${c * pct} ${c}`} />
-          </g>
-        )
-      })}
-    </svg>
-  )
-}
-
-/** Placeholder landing after onboarding until the Today screen exists. */
-function Done({ data, onRestart }: { data: OnboardingData; onRestart: () => void }) {
-  const bg = BACKGROUNDS.find((b) => b.id === data.background)!.css
-  const tracked = data.justMeals ? [] : TRACKABLES.filter((t) => data.tracking.includes(t.id))
-  const avoid = [...data.allergens.map((a) => `No ${a.toLowerCase()}`), data.otherAllergens.trim(), ...data.dietary].filter(Boolean)
-  return (
-    <div className="min-h-dvh" style={{ background: bg }}>
-      <Screen>
-        <h1 className="mt-10 font-display text-[34px] leading-tight font-extrabold tracking-tight">You're all set, {data.firstName.trim()}!</h1>
-        <p className="mt-2 text-[15px] text-ink/70">Here's how we'll set up 5C Fit for you.</p>
-        {tracked.length > 0 && (
-          <div className="mt-6 flex flex-col items-center rounded-3xl bg-white/85 p-5 backdrop-blur">
-            <Rings colors={tracked.map((t) => t.color)} />
-            <ul className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-[13px]">
-              {tracked.map((t) => (
-                <li key={t.id} className="flex items-center gap-1.5">
-                  <span className="size-2.5 rounded-full" style={{ background: t.color }} />
-                  {t.label}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <dl className="mt-3 space-y-3">
-          {[
-            ['College', data.college],
-            ['Tracking', data.justMeals ? 'Just meals, no numbers' : tracked.map((t) => t.label).join(', ')],
-            ['Watching for', avoid.length ? avoid.join(', ') : 'Nothing'],
-          ].map(([k, v]) => (
-            <div key={k} className="rounded-2xl bg-white/85 p-4 backdrop-blur">
-              <dt className="text-[13px] text-muted">{k}</dt>
-              <dd className="mt-0.5 text-[16px] font-medium">{v}</dd>
-            </div>
-          ))}
-        </dl>
-        <button type="button" onClick={onRestart} className="mt-6 text-[15px] font-medium text-c-blue">
-          Edit answers
-        </button>
-      </Screen>
-    </div>
-  )
+  switch (route.name) {
+    case 'signup':
+      return (
+        <SignUp
+          data={draft}
+          update={(p) => setDraft((d) => ({ ...d, ...p }))}
+          onNext={() => go({ name: 'onboarding', step: 1 })}
+          onLogIn={() => {
+            setState((s) => ({ ...s, signedIn: true }))
+            go({ name: 'today' })
+          }}
+        />
+      )
+    case 'onboarding': {
+      const Step = STEPS[route.step - 1]
+      return (
+        <Step
+          data={draft}
+          update={(p) => setDraft((d) => ({ ...d, ...p }))}
+          onBack={() => go(route.step === 1 ? { name: 'signup' } : { name: 'onboarding', step: route.step - 1 })}
+          onNext={() => {
+            if (route.step < STEPS.length) return go({ name: 'onboarding', step: route.step + 1 })
+            setState((s) => ({ ...s, profile: withoutPassword(draft), signedIn: true }))
+            go({ name: 'today' })
+          }}
+          step={route.step}
+          total={STEPS.length}
+        />
+      )
+    }
+    case 'today':
+      return <Today state={state} onTab={onTab} onLog={(meal) => go({ name: 'log', meal: meal ?? mealForNow() })} addLogs={addLogs} removeLog={removeLog} />
+    case 'stats':
+      return <Stats state={state} onTab={onTab} />
+    case 'me':
+      return (
+        <Me
+          state={state}
+          onTab={onTab}
+          update={updateProfile}
+          onLogOut={() => {
+            setState((s) => ({ ...s, signedIn: false }))
+            setDraft({ ...initialData, ...state.profile, password: '' })
+            go({ name: 'signup' })
+          }}
+        />
+      )
+    case 'log':
+      return (
+        <LogStart
+          background={state.profile.background}
+          meal={route.meal}
+          onMeal={(meal) => go({ name: 'log', meal })}
+          onHall={() => go({ name: 'hall', meal: route.meal })}
+          onOther={() => go({ name: 'own', meal: route.meal })}
+          onCancel={() => go({ name: 'today' })}
+        />
+      )
+    case 'hall':
+      return (
+        <HallMenu
+          profile={state.profile}
+          meal={route.meal}
+          onBack={() => go({ name: 'log', meal: route.meal })}
+          onSave={(entries) => {
+            addLogs(entries)
+            go({ name: 'today' })
+          }}
+        />
+      )
+    case 'own':
+      return (
+        <OwnFood
+          background={state.profile.background}
+          meal={route.meal}
+          myFoods={state.myFoods}
+          onBack={() => go({ name: 'log', meal: route.meal })}
+          onSave={(entry, food) => {
+            addLogs([entry])
+            if (food) saveFood(food)
+            go({ name: 'today' })
+          }}
+        />
+      )
+  }
 }

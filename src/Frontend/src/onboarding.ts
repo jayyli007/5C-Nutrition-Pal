@@ -1,19 +1,28 @@
 export type College = 'Pomona' | 'CMC' | 'Scripps' | 'Harvey Mudd' | 'Pitzer'
 
-export const COLLEGES: { name: College; hall: string; domains: string[] }[] = [
-  { name: 'Pomona', hall: 'Frary', domains: ['pomona.edu'] },
-  { name: 'CMC', hall: 'Collins', domains: ['cmc.edu', 'claremontmckenna.edu'] },
-  { name: 'Scripps', hall: 'Malott', domains: ['scrippscollege.edu'] },
-  { name: 'Harvey Mudd', hall: 'Hoch-Shanahan', domains: ['hmc.edu'] },
-  { name: 'Pitzer', hall: 'McConnell', domains: ['pitzer.edu'] },
+export const HALLS = ['Frary', 'Frank', 'Oldenborg', 'Collins', 'Malott', 'Hoch', 'McConnell'] as const
+export type Hall = (typeof HALLS)[number]
+
+/** Each college's home dining hall, shown first on menus. */
+export const COLLEGES: { name: College; hall: Hall }[] = [
+  { name: 'Pomona', hall: 'Frary' },
+  { name: 'CMC', hall: 'Collins' },
+  { name: 'Scripps', hall: 'Malott' },
+  { name: 'Harvey Mudd', hall: 'Hoch' },
+  { name: 'Pitzer', hall: 'McConnell' },
 ]
 
-/** Matches the email's domain (or any subdomain, e.g. g.hmc.edu) to a college. */
-export function collegeFromEmail(email: string): College | undefined {
-  const domain = email.trim().toLowerCase().split('@')[1]
-  if (!domain) return undefined
-  return COLLEGES.find((c) => c.domains.some((d) => domain === d || domain.endsWith(`.${d}`)))?.name
+export function homeHall(college?: College): Hall {
+  return COLLEGES.find((c) => c.name === college)?.hall ?? 'Frary'
 }
+
+/** Loose check: something@something.tld. Any provider works. */
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())
+}
+
+export const MEALS = ['Breakfast', 'Brunch', 'Lunch', 'Dinner'] as const
+export type Meal = (typeof MEALS)[number]
 
 export const BACKGROUNDS = [
   { id: 'sunrise', name: 'Sunrise', css: 'linear-gradient(180deg, #fde68a 0%, #fbb4a5 55%, #f9a8d4 100%)' },
@@ -40,15 +49,17 @@ export const DIETARY_RESTRICTIONS = [
 // The FDA "major food allergens", which is also how the dining hall menus label items.
 export const ALLERGENS = ['Milk', 'Eggs', 'Peanuts', 'Tree nuts', 'Fish', 'Shellfish', 'Wheat', 'Soy', 'Sesame'] as const
 
+// Colors follow the screen flow board: calories yellow, protein red, carbs orange, fat blue.
+// `short` is the unit shown next to numbers; `goal` is the starting daily goal (editable in Me).
 export const TRACKABLES = [
-  { id: 'calories', label: 'Calories', unit: 'kcal', color: '#f2803a' },
-  { id: 'protein', label: 'Protein', unit: 'grams', color: '#e5484d' },
-  { id: 'carbs', label: 'Carbs', unit: 'grams', color: '#f5c518' },
-  { id: 'fat', label: 'Fat', unit: 'grams', color: '#30a46c' },
-  { id: 'fiber', label: 'Fiber', unit: 'grams', color: '#3b82f6' },
-  { id: 'sugar', label: 'Sugar', unit: 'grams', color: '#c86fd8' },
-  { id: 'sodium', label: 'Sodium', unit: 'milligrams', color: '#8b8d98' },
-  { id: 'satFat', label: 'Saturated fat', unit: 'grams', color: '#12a594' },
+  { id: 'calories', label: 'Calories', unit: 'kcal', short: 'kcal', goal: 2200, color: '#f5c518' },
+  { id: 'protein', label: 'Protein', unit: 'grams', short: 'g', goal: 120, color: '#e5484d' },
+  { id: 'carbs', label: 'Carbs', unit: 'grams', short: 'g', goal: 250, color: '#f2803a' },
+  { id: 'fat', label: 'Fat', unit: 'grams', short: 'g', goal: 70, color: '#3b82f6' },
+  { id: 'fiber', label: 'Fiber', unit: 'grams', short: 'g', goal: 30, color: '#30a46c' },
+  { id: 'sugar', label: 'Sugar', unit: 'grams', short: 'g', goal: 50, color: '#c86fd8' },
+  { id: 'sodium', label: 'Sodium', unit: 'milligrams', short: 'mg', goal: 2300, color: '#8b8d98' },
+  { id: 'satFat', label: 'Saturated fat', unit: 'grams', short: 'g', goal: 20, color: '#12a594' },
 ] as const
 
 export type TrackableId = (typeof TRACKABLES)[number]['id']
@@ -65,6 +76,10 @@ export interface OnboardingData {
   tracking: TrackableId[]
   /** "Just log meals, no numbers": overrides tracking. */
   justMeals: boolean
+  /** Daily goal per nutrient, edited in Me. */
+  goals: Record<TrackableId, number>
+  /** Meals that get their own card on Today. */
+  usualMeals: Meal[]
 }
 
 export const initialData: OnboardingData = {
@@ -77,6 +92,8 @@ export const initialData: OnboardingData = {
   otherAllergens: '',
   tracking: ['calories', 'protein', 'carbs', 'fat'],
   justMeals: false,
+  goals: Object.fromEntries(TRACKABLES.map((t) => [t.id, t.goal])) as Record<TrackableId, number>,
+  usualMeals: ['Breakfast', 'Lunch', 'Dinner'],
 }
 
 export function toggle<T>(list: T[], item: T): T[] {
