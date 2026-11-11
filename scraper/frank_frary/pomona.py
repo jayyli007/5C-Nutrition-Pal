@@ -230,9 +230,10 @@ from datetime import date, datetime
 import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
+from dotenv import load_dotenv
 
 
-DB_URL = os.environ["DATABASE_URL"] #change this url to reflect the database you want the data to be stored in
+DB_URL = "postgresql://user:password@localhost:5432/postgres" #change this url to reflect the database you want the data to be stored in
 #user and password should be different, port number could be different too
 TABLE_NAME_FRANK = "menu_items_frank"
 TABLE_NAME_FRARY = "menu_items_frary"
@@ -244,7 +245,6 @@ NAME_KEY = "shortName"
 NAME_FALLBACKS = ["short_name", "name", "item_name", "description"]
 MENU_FRANK = entireMenu(menu_frank)
 MENU_FRARY = entireMenu(menu_frary)
-
 
 def get_name(item):
     for key in [NAME_KEY, *NAME_FALLBACKS]:

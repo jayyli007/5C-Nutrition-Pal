@@ -176,7 +176,9 @@ parsedMenu_mcconnel = entireMenu(menu_mcconnel)
 import os
 from collections import Counter
 import psycopg
+from dotenv import load_dotenv
 
+load_dotenv()  # reads DATABASE_URL from the .env file in the repo root
 DB_URL = os.environ["DATABASE_URL"]
 TABLE = "menu_items_collins"
 
