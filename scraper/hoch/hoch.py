@@ -142,7 +142,7 @@ def parseItem(itemDict):
         "Total Dietary Fiber (g)": unit(item["dietaryFiber"], 1),
         "Total Sugars (g)": unit(item["sugar"], 1),
         #"Added Sugar (g)": item["addedSugar"], seems to be null for every item so far, so we leave it out for now
-        # "Protein (g)": unit(item["protein"], 1),
+        "Protein (g)": unit(item.get("protein"), 1),
         # "Vitamin C (mg)": unit(item["vitaminC"], 2),
         # "Calcium (mg)": unit(item["calcium"], 2),
         # "Iron (mg)": unit(item["iron"], 2),
