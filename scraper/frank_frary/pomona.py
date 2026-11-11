@@ -173,8 +173,9 @@ from datetime import date, datetime
 import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
+from dotenv import load_dotenv
 
-
+load_dotenv()  # reads DATABASE_URL from the .env file in the repo root
 DB_URL = os.environ["DATABASE_URL"] #change this url to reflect the database you want the data to be stored in
 #user and password should be different, port number could be different too
 TABLE_NAME_FRANK = "menu_items_frank"
