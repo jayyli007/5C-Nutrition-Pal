@@ -1,0 +1,45 @@
+name: Scrape dining hall menus
+
+on:
+  schedule:
+    # GitHub cron is in UTC: 13:17 UTC = 5:17am Pacific in winter, 6:17am in summer.
+    - cron: "17 13 * * *"
+  workflow_dispatch: # adds a "Run workflow" button on the Actions tab
+
+concurrency:
+  group: scrape-menus
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SODEXO_API_KEY: ${{ secrets.SODEXO_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        id: install
+        run: pip install -r requirements.txt
+
+      # Each hall runs even if an earlier one failed, so one broken site
+      # doesn't stop the others. The run is still marked failed so you notice.
+      - name: Pomona (Frank, Frary)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: python scraper/frank_frary/pomona.py
+
+      - name: Bon Appetit (Collins, Malott, McConnell)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: python scraper/bonappetit/bonappetit.py
+
+      - name: Hoch-Shanahan
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: python scraper/hoch/hoch.py
