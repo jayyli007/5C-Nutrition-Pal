@@ -125,12 +125,13 @@ def parseItem(itemDict):
     }
 
     info = {
-        # "itemID": item["menuItemId"],
+        "dining_hall": "Hoch",
+        "itemID": item["menuItemId"],
         "category": item["course"],
         "meal": item["meal"],
         "description": item["description"],
         "shortName": item["formalName"],
-        "servingDescription": item["portionSize"],
+        #"servingDescription": item["portionSize"],
         "serving": item["portion"],
         "Calories (kcal)": item["calories"],
         "Total Lipid/Fat (g)": unit(item["fat"], 1),
@@ -142,7 +143,7 @@ def parseItem(itemDict):
         "Total Dietary Fiber (g)": unit(item["dietaryFiber"], 1),
         "Total Sugars (g)": unit(item["sugar"], 1),
         #"Added Sugar (g)": item["addedSugar"], seems to be null for every item so far, so we leave it out for now
-        # "Protein (g)": unit(item["protein"], 1),
+        "Protein (g)": unit(item["protein"], 1),
         # "Vitamin C (mg)": unit(item["vitaminC"], 2),
         # "Calcium (mg)": unit(item["calcium"], 2),
         # "Iron (mg)": unit(item["iron"], 2),
@@ -265,5 +266,5 @@ def load(data, db_url=DB_URL):
     print(f"Inserted {len(rows)} rows into {TABLE}.")
     print(f"Flag columns ({len(flags)}): {', '.join(name[n] for n in flags)}")
 
-if __name__ == "__main__":
-    load(parsedMenu)
+# if __name__ == "__main__":
+#     load(parsedMenu)

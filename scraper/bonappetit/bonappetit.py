@@ -72,7 +72,7 @@ test1 = next(iter(menu_collins.values()))
 # Diet restrictions + allergens, always added as boolean columns.
 FLAG_COLUMNS = [
     "Vegan", "Vegetarian", "Gluten Free",
-    "Peanut", "Tree Nut", "Milk", "Egg", "Soy",
+    "Peanut", "Tree nut", "Milk", "Egg", "Soy",
     "Sesame", "Fish", "Shellfish", "Wheat",
 ]
 
@@ -92,18 +92,22 @@ def nv(nutrition, key):
     """Value of a nutrient field, or None if the field is missing."""
     return (nutrition.get(key) or {}).get("value")
 
-def parseItem(itemDict):
+def parseItem(itemDict, diningHall):
     '''parse one item in the json file
     returns a dict of the important description and nutrient columns'''
     item = itemDict
     nutrition = item["nutrition_details"]
-    allergens = item["cor_icon"]
-    allergensToUpdate = {}
-    if allergens != []:
-        for value in allergens.values():
-            col = LABEL_MAP.get(value, value)  # rename if mapped, else keep as-is
-            if col in FLAG_COLUMNS:
-                allergensToUpdate[col] = True
+    cor_icon = item.get("cor_icon") or {}          # handles missing key, None, or []
+    allergens = cor_icon.values() if isinstance(cor_icon, dict) else cor_icon
+
+    # start with every allergen column set to False
+    allergensToUpdate = {col: False for col in FLAG_COLUMNS}
+
+    # flip to True the ones this item actually has
+    for allergen in allergens:
+        col = LABEL_MAP.get(allergen, allergen)          # rename if mapped, else keep as-is
+        if col in allergensToUpdate:
+            allergensToUpdate[col] = True
 
     serving = nutrition.get("servingSize") or {}
     serving_value = serving.get("value")
@@ -131,6 +135,7 @@ def parseItem(itemDict):
     #     }
     
     info = {
+        "dining_hall": diningHall,
         "itemID": item["id"],
         "category": item["station"],
         "meal": item["meals"],
@@ -159,15 +164,15 @@ def parseItem(itemDict):
 
 #print(parseItem(test1))
 
-def entireMenu(menu):
+def entireMenu(menu, diningHall):
     '''parses the entire menu by iterating over the dict
     returns a list of dicts, with each dict representing one item'''
-    return [parseItem(item) for item in menu.values()]
+    return [parseItem(item, diningHall) for item in menu.values()]
 
 #print(entireMenu(menu_collins))
-parsedMenu_collins = entireMenu(menu_collins)
-parsedMenu_malott = entireMenu(menu_malott)
-parsedMenu_mcconnel = entireMenu(menu_mcconnel)
+parsedMenu_collins = entireMenu(menu_collins, "Collins")
+parsedMenu_malott = entireMenu(menu_malott, "Malott")
+parsedMenu_mcconnel = entireMenu(menu_mcconnel, "McConnel")
 
 
 
@@ -240,7 +245,7 @@ def load(data, TABLE, db_url=DB_URL):
     print(f"Inserted {len(rows)} rows into {TABLE}.")
 
 
-if __name__ == "__main__":
-    load(parsedMenu_collins, "menu_items_collins")
-    load(parsedMenu_malott, "menu_items_malott")
-    load(parsedMenu_mcconnel, "menu_items_mcconnel")
+# if __name__ == "__main__":
+#     load(parsedMenu_collins, "menu_items_collins")
+#     load(parsedMenu_malott, "menu_items_malott")
+#     load(parsedMenu_mcconnel, "menu_items_mcconnel")

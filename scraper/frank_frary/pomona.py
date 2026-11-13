@@ -38,6 +38,8 @@ from zoneinfo import ZoneInfo
 
 today = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y%m%d")
 
+# print(os.getenv("DATABASE_URL"))
+
 #extraction--------------------------------
 
 url_frank = "https://api.pomona.edu/eatec/Frank.json"
@@ -73,7 +75,7 @@ testItem = menu_frank[0]["recipes"]["recipe"][0]
 
 NUTRIENT_LABELS = (
     "Calories (kcal)~CAL|Total Lipid/Fat (g)~TL|Saturated fatty acid (g)~FAS|"
-    "Trans Fat (g)~TRF|Cholesterol (mg)~CHO|Sodium (mg)~Na|Carbohydrate (g)~CRB|"
+    "Trans Fat (g)~TRF|Cholesterol (mg)~CHO|Sodium (mg)~Na|Carbohydrates (g)~CRB|"
     "Total Dietary Fiber (g)~FIB|Total Sugars (g)~SUG|Added Sugar (g)~SugA|"
     "Protein (g)~PRO|Vitamin C (mg)~vC|Calcium (mg)~CA|Iron (mg)~Fe|"
     "Vitamin A (mcg RAE)~(rae)|Vitamin D(iu)~VITD"
@@ -83,6 +85,11 @@ excluded = ["Saturated", "Trans", "Added", "Vitamin", "Calcium", "Iron"]
 excluded_indices = [i for i, s in enumerate(labels)
            if any(sub in s for sub in excluded)]
 labels = [label for label in labels if not any(ex in label for ex in excluded)] #gets rid of the nutrients above
+
+included_allergens = ["Peanut", "Tree nut" , "Milk" , "Egg" , "Soy", "Sesame",
+                              "Fish", "Shellfish", "Wheat"]
+included_dietary = ["Vegan", "Vegetarian", "Gluten Free"]
+
 
 
 #the output style of this function can be changed into anything
@@ -94,10 +101,10 @@ def parseItem(recipeDict):
     info = {
         "itemID": recipe["@id"],
         "category": recipe["@category"],
-        "menuPosition": recipe["@menuPosition"],
+        # "menuPosition": recipe["@menuPosition"],
         "description": recipe["@description"],
         "shortName": recipe["@shortName"],
-        "servingDescription": recipe["@servingDescription"],
+        "serving": recipe["@servingDescription"],
     }
  
     if "@nutrients" in recipe:
@@ -123,23 +130,8 @@ def parseItem(recipeDict):
                 else:
                     info[label] = float(values[i])
             #return info
-        
-        #add dietary restrictions/allergens
-        included_allergens = ["Peanut", "Tree Nut" , "Milk" , "Egg" , "Soy", "Sesame",
-                              "Fish", "Shellfish", "Wheat"]
-        allergensJSON = recipe["allergens"]["allergen"] #this is a list of dicts
-        TreeNutOr = False
-        for allergen in allergensJSON:
-            if "Tree Nut" in allergen["@id"] and allergen.get("#text", "").strip().lower() == "yes":
-                    TreeNutOr = True
-                    break
-        allergens = {
-            allergen["@id"]: allergen.get("#text", "").strip().lower() == "yes"
-            for allergen in allergensJSON if allergen["@id"] in included_allergens
-        }
-        info.update(allergens)
 
-        included_dietary = ["Vegan, Vegetarian, Gluten Free"]
+        #add dietary restrictions/allergens
         dietaryJSON = recipe["dietaryChoices"]["dietaryChoice"]
         dietaries = {
             dietary["@id"]: dietary.get("#text", "").strip().lower() == "yes"
@@ -147,9 +139,32 @@ def parseItem(recipeDict):
         }
         info.update(dietaries)
 
-    else:
+        allergensJSON = recipe.get("allergens", {}).get("allergen", [])
+        if isinstance(allergensJSON, dict):      # xmltodict gives a dict, not a list, when there's only one
+            allergensJSON = [allergensJSON]
+
+        # what the recipe actually lists: {"Milk": True, "Tree nut - Almond": False, ...}
+        present = {
+            a["@id"]: a.get("#text", "").strip().lower() == "yes"
+            for a in allergensJSON
+        }
+
+        # one key for EVERY allergen you care about, False if not listed
+        allergens = {name: present.get(name, False) for name in included_allergens}
+
+        # True if any tree-nut entry says yes
+        allergens["Tree nut"] = any("Tree nut" in k and v for k, v in present.items())
+
+        info.update(allergens)
+
+    elif any(w.isupper() and sum(c.isalpha() for c in w) >= 2 for w in recipe["@shortName"].split()):
         print(recipe["@shortName"] + " has no nutrients data")
-        info = None #the item does not have nutrients data, so we skip it
+        info = None #the item is a thing like TODAY`S PIZZA, so we skip it
+
+    else:
+        info.update({label: None for label in labels})
+        info.update({allergen: None for allergen in included_allergens})
+        info.update({restriction: None for restriction in included_dietary})
 
     return info
  
@@ -178,9 +193,9 @@ def parseLocation(locationDict):
     list of the outputs of parseItem with id, servedate, meal appended onto every dict'''
     location = locationDict
     info = {
-        "locationID": location["@id"],
+        # "locationID": location["@id"],
         "servedate": location["@servedate"],
-        "location": location["@location"],
+        "dining_hall": (location["@location"].split())[0],
         "meal": location["@mealperiodname"]
     }
 
@@ -218,9 +233,11 @@ def parseLocation(locationDict):
 def entireMenu(entireMenu):
     toReturn = []
     for location in entireMenu:
+        if location.get("@servedate") != today:   # skip other days before parsing
+            continue
         parsed = parseLocation(location)
-        if parsed != None and parsed != [] and parsed[0]["servedate"] == today:
-            toReturn = toReturn + parsed
+        if parsed:
+            toReturn += parsed
     return toReturn
 
 #upload----------------------------------------------------------------
@@ -231,9 +248,10 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 from dotenv import load_dotenv
+load_dotenv()  # reads DATABASE_URL from the .env file in the repo root
 
-
-DB_URL = "postgresql://user:password@localhost:5432/postgres" #change this url to reflect the database you want the data to be stored in
+DB_URL = os.environ["DATABASE_URL"]
+ #change this url to reflect the database you want the data to be stored in
 #user and password should be different, port number could be different too
 TABLE_NAME_FRANK = "menu_items_frank"
 TABLE_NAME_FRARY = "menu_items_frary"
@@ -333,9 +351,9 @@ def load_menus(menus, table, db_url=DB_URL, replace=REPLACE_TABLE):
     print(f"Inserted {len(rows)} rows into {table} with {len(keys)} columns.")
     return len(rows)
 
-if __name__ == "__main__":
-    load_menus(MENU_FRANK, TABLE_NAME_FRANK)
-    load_menus(MENU_FRARY, TABLE_NAME_FRARY)
+# if __name__ == "__main__":
+#     load_menus(MENU_FRANK, TABLE_NAME_FRANK)
+#     load_menus(MENU_FRARY, TABLE_NAME_FRARY)
 
 #uncomment this last if statement to load in the data from python to SQL to visualize it
 #you will need to change the url to match the desired SQL server
