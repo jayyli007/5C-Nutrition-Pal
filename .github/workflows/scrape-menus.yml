@@ -17,6 +17,8 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SODEXO_API_KEY: ${{ secrets.SODEXO_API_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -30,16 +32,8 @@ jobs:
         id: install
         run: pip install -r requirements.txt
 
-      # Each hall runs even if an earlier one failed, so one broken site
-      # doesn't stop the others. The run is still marked failed so you notice.
-      - name: Pomona (Frank, Frary)
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: python scraper/frank_frary/pomona.py
-
-      - name: Bon Appetit (Collins, Malott, McConnell)
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: python scraper/bonappetit/bonappetit.py
-
-      - name: Hoch-Shanahan
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: python scraper/hoch/hoch.py
+      # menu_database.py runs all three scrapers, standardizes their rows and
+      # uploads them. One broken scraper doesn't stop the others; the run is
+      # still marked failed so you notice.
+      - name: Scrape and upload all halls
+        run: python scraper/menu_database.py
