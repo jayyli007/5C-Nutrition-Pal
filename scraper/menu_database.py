@@ -9,7 +9,8 @@ Shared menu layer for all six dining halls.
     python scraper/menu_database.py --dry-run   same, but print a summary instead of uploading
 
 Each scraper keeps its own fetching and parsing. This file turns their records into
-one standard row shape (SCHEMA below) and uploads them into today's table.
+one standard row shape (SCHEMA below) and uploads them into all_menu_items,
+one table that holds every hall and every day (see all_menu_items.sql).
 
 Rules (from the Menu Format Map):
 - one row per dining hall, date, meal and item
@@ -25,7 +26,6 @@ import json
 import os
 import re
 import sys
-import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -340,16 +340,18 @@ def load_all_rows():
     return rows, failed
 
 
-# ---------- upload (Brandon's, now using SCHEMA) ----------
+# ---------- upload (Brandon's supabase setup, now into one table) ----------
 """
-This uploads data to supabase directly, instead of using psycopg (which had some errors on my end)
-You will have to set .env variables as described below to upload data into supabase
+Every day's rows go into one table, all_menu_items, so the frontend has a single
+source and past days stay as history. Each run replaces one hall's menu for one day
+at a time (through replace_menu_day), so rerunning a day never duplicates it, and a
+hall whose scraper failed keeps whatever it already had.
 
 ONE-TIME SETUP
 1) python -m pip install -r requirements.txt
-2) In Supabase -> SQL Editor, run create_menu_table.sql once.
-3) Create scraper/.env (same folder as this file) with:
-       SUPABASE_URL=https://YOURREF.supabase.co
+2) In Supabase -> SQL Editor, run scraper/all_menu_items.sql once.
+3) Put these in .env (repo root or scraper/):
+       SUPABASE_URL=https://<project ref>.supabase.co
        SUPABASE_KEY=sb_secret_...      (or the legacy service_role key)
    Both are in Project Settings -> API Keys, and you can copy them again any time.
 """
@@ -359,9 +361,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 load_dotenv(SCRIPT_DIR / ".env", override=True)
 load_dotenv(SCRIPT_DIR.parent / ".env")   # repo-root .env, if the keys live there
 
-RESERVED = {"row_id", "inserted_at"}
-BATCH_SIZE = 500
-REPLACE_TABLE = True   # True = rebuild today's table each run; False = add rows to it
+TABLE = "all_menu_items"
 
 _supabase = None
 
@@ -388,41 +388,37 @@ def to_json_value(value, col_type):
     return value
 
 
-def insert_with_retry(table_name, batch, attempts=10):
-    """A brand-new table can take a moment to appear in the API; retry until it does."""
-    for i in range(attempts):
-        try:
-            return get_supabase().table(table_name).insert(batch).execute()
-        except Exception as e:
-            not_ready = "PGRST205" in str(e) or "schema cache" in str(e)
-            if not_ready and i < attempts - 1:
-                time.sleep(1)
-                continue
-            raise
+def group_by_day(rows):
+    """{(serve_date, dining_hall): [rows]}; rows without a date can't be stored and are skipped."""
+    groups = {}
+    for row in rows:
+        if row["serve_date"] is None:
+            print(f"Skipped {row['dining_hall']} item {row['name']!r}: no serve date", file=sys.stderr)
+            continue
+        groups.setdefault((row["serve_date"], row["dining_hall"]), []).append(row)
+    return groups
 
 
-def upload_menu_items(rows, table_name=None, replace=REPLACE_TABLE):
-    """Create today's table if needed, then insert every row."""
-    if not rows:
+def upload_menu_items(rows):
+    """Replace each hall's menu for each day in rows with the new rows."""
+    groups = group_by_day(rows)
+    if not groups:
         print("Nothing to upload.")
-        return None
+        return 0
 
-    table_name = table_name or f"menu_items_{date.today():%m-%d-%Y}"
+    total = 0
+    for (serve_date, hall), day_rows in sorted(groups.items()):
+        payload = [{c: to_json_value(row.get(c), t) for c, t in SCHEMA.items()} for row in day_rows]
+        inserted = get_supabase().rpc("replace_menu_day", {
+            "p_serve_date": serve_date.isoformat(),
+            "p_dining_hall": hall,
+            "p_rows": payload,
+        }).execute().data
+        print(f"  {serve_date} {hall}: {inserted} rows")
+        total += inserted
 
-    # 1) create the table (or add new columns) via the SQL function installed once
-    get_supabase().rpc("create_menu_table", {
-        "table_name": table_name,
-        "columns": [{"name": c, "type": t} for c, t in SCHEMA.items()],
-        "replace_table": replace,
-    }).execute()
-
-    # 2) insert in batches; every row gets every column so the batch is consistent
-    payload = [{c: to_json_value(row.get(c), t) for c, t in SCHEMA.items()} for row in rows]
-    for start in range(0, len(payload), BATCH_SIZE):
-        insert_with_retry(table_name, payload[start:start + BATCH_SIZE])
-
-    print(f"Inserted {len(payload)} rows into {table_name}")
-    return table_name
+    print(f"Uploaded {total} rows into {TABLE}")
+    return total
 
 
 def summarize(rows):
