@@ -1,0 +1,14 @@
+{
+  "name": "5C Fit",
+  "short_name": "5C Fit",
+  "description": "Log every dining hall meal in a few taps.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f2ee",
+  "theme_color": "#f4f2ee",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

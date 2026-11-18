@@ -1,17 +1,28 @@
 import { useState } from 'react'
 import { Logo } from '../components/Logo'
 import { PrimaryButton, Screen } from '../components/ui'
-import { collegeFromEmail, type OnboardingData } from '../onboarding'
+import { isValidEmail, type OnboardingData } from '../onboarding'
 
 const inputClass =
   'h-13 w-full rounded-xl border border-line bg-white px-4 text-[16px] outline-none placeholder:text-[#a3a3a3] focus:border-ink focus:ring-1 focus:ring-ink'
 
-export function SignUp({ data, update, onNext }: { data: OnboardingData; update: (p: Partial<OnboardingData>) => void; onNext: () => void }) {
+export function SignUp({
+  data,
+  update,
+  onNext,
+  onLogIn,
+}: {
+  data: OnboardingData
+  update: (p: Partial<OnboardingData>) => void
+  onNext: () => void
+  /** "I already have an account": skip onboarding and open Today. */
+  onLogIn: () => void
+}) {
   const [touched, setTouched] = useState(false)
-  const college = collegeFromEmail(data.email)
-  const emailError = data.email && !college ? 'Use your 5C school email.' : ''
+  const emailOk = isValidEmail(data.email)
+  const emailError = data.email && !emailOk ? 'Check your email address.' : ''
   const passwordError = data.password && data.password.length < 8 ? 'Password needs at least 8 characters.' : ''
-  const valid = !!college && data.password.length >= 8
+  const valid = emailOk && data.password.length >= 8
 
   return (
     <form
@@ -19,8 +30,6 @@ export function SignUp({ data, update, onNext }: { data: OnboardingData; update:
         e.preventDefault()
         setTouched(true)
         if (!valid) return
-        // Pre-pick the college from the email domain; the user can still change it next.
-        update({ college: data.college ?? college })
         onNext()
       }}
     >
@@ -30,7 +39,7 @@ export function SignUp({ data, update, onNext }: { data: OnboardingData; update:
             <PrimaryButton type="submit" disabled={touched && !valid}>
               Create account
             </PrimaryButton>
-            <button type="button" className="mt-4 block w-full text-center text-[15px] font-medium text-c-blue">
+            <button type="button" onClick={onLogIn} className="mt-4 block w-full text-center text-[15px] font-medium text-c-blue">
               I already have an account: log in
             </button>
           </>
@@ -43,14 +52,14 @@ export function SignUp({ data, update, onNext }: { data: OnboardingData; update:
         </div>
 
         <label className="mt-10 block">
-          <span className="mb-2 block text-[14px] font-semibold">School email</span>
+          <span className="mb-2 block text-[14px] font-semibold">Email</span>
           <input
             className={inputClass}
             type="email"
             inputMode="email"
             autoComplete="email"
             autoCapitalize="none"
-            placeholder="you@pomona.edu"
+            placeholder="you@example.com"
             value={data.email}
             onChange={(e) => update({ email: e.target.value })}
           />
@@ -69,7 +78,7 @@ export function SignUp({ data, update, onNext }: { data: OnboardingData; update:
         <p className={`mt-3 text-[13px] ${touched && (emailError || passwordError) ? 'text-c-red' : 'text-muted'}`}>
           {touched && (emailError || passwordError)
             ? emailError || passwordError
-            : 'Any 5C email works: Pomona, CMC, Scripps, Mudd or Pitzer.'}
+            : 'Any email works.'}
         </p>
       </Screen>
     </form>
