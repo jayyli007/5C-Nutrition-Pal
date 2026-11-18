@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="380 370 1180 1180" role="img" aria-label="5C Fit">
+  <defs>
+    <path id="five" d="M457 632H820V774H601V882C620 858 650 848 678 848C750 848 790 875 808 915C835 970 843 1035 843 1105C843 1180 838 1235 828 1272C815 1325 790 1360 760 1380C728 1400 688 1405 638 1405C580 1405 535 1390 500 1360C462 1328 439 1285 439 1230V1115H598V1185C598 1215 602 1235 606 1245C612 1258 622 1262 638 1262C655 1262 666 1255 671 1245C676 1235 678 1222 678 1205V1053C678 1030 676 1012 670 998C665 982 655 973 640 973C612 973 596 993 596 1037H457Z"/>
+    <mask id="gap" maskUnits="userSpaceOnUse" x="380" y="370" width="1180" height="1180">
+      <rect x="380" y="370" width="1180" height="1180" fill="#fff"/>
+      <use href="#five" fill="#000" stroke="#000" stroke-width="96" stroke-linejoin="miter"/>
+    </mask>
+  </defs>
+  <g fill="none" stroke-width="60" stroke-linecap="round" mask="url(#gap)">
+    <path stroke="#e84d52" d="M1478 573A535 535 0 1 0 1478 1357"/>
+    <path stroke="#f58426" d="M1413 645A445 445 0 1 0 1413 1287"/>
+    <path stroke="#f5c51a" d="M1351 705A350 350 0 1 0 1351 1225"/>
+    <path stroke="#26b36b" d="M1290 765A260 260 0 1 0 1290 1167"/>
+    <path stroke="#3180f6" d="M1220 833A165 165 0 1 0 1220 1099"/>
+  </g>
+  <use href="#five" fill="#000"/>
+</svg>
