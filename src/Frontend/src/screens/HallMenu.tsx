@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { BackTitle, Page, Segmented, SectionLabel } from '../components/app'
 import { Chip, PrimaryButton } from '../components/ui'
-import { allergensIn, byStation, fitsDiet, getMenu, rowNutrients, type MenuRow } from '../menu'
+import { allergensIn, allergensUnknown, byStation, fitsDiet, getMenu, HALLS_WITH_MENUS, rowName, rowNutrients, rowStation, useMenu, usingSampleMenus, type MenuRow } from '../menu'
 import { HALLS, homeHall, MEALS, type Hall, type Meal } from '../onboarding'
 import { dayKey, newId, type LogEntry, type Profile } from '../store'
 
@@ -11,11 +11,11 @@ export function HallMenu({ profile, meal: startMeal, onBack, onSave }: { profile
   const [query, setQuery] = useState('')
   const [picked, setPicked] = useState<Map<string, { hall: Hall; row: MenuRow }>>(new Map())
 
-  // Mock rows for now (see menu.ts); later this is a query on menu_items_<hall>.
-  const rows = useMemo(() => getMenu(hall, meal), [hall, meal])
+  const menu = useMenu(() => getMenu(hall, meal), [hall, meal])
+  const rows = menu.status === 'ready' ? menu.rows : []
   const q = query.trim().toLowerCase()
   const shown = rows
-    .filter((r) => !q || r.shortName.toLowerCase().includes(q) || r.category.toLowerCase().includes(q))
+    .filter((r) => !q || rowName(r).toLowerCase().includes(q) || rowStation(r).toLowerCase().includes(q))
     // Dishes that fit the user's diet come first within each station.
     .sort((a, b) => Number(fitsDiet(b, profile.dietary)) - Number(fitsDiet(a, profile.dietary)))
   const groups = byStation(shown)
@@ -23,8 +23,8 @@ export function HallMenu({ profile, meal: startMeal, onBack, onSave }: { profile
   const toggle = (row: MenuRow) =>
     setPicked((m) => {
       const next = new Map(m)
-      if (next.has(row.itemID)) next.delete(row.itemID)
-      else next.set(row.itemID, { hall, row })
+      if (next.has(row.key)) next.delete(row.key)
+      else next.set(row.key, { hall, row })
       return next
     })
 
@@ -34,7 +34,7 @@ export function HallMenu({ profile, meal: startMeal, onBack, onSave }: { profile
         id: newId(),
         date: dayKey(),
         meal,
-        name: row.shortName,
+        name: rowName(row),
         hall,
         serving: row.serving ?? undefined,
         nutrients: rowNutrients(row),
@@ -82,33 +82,56 @@ export function HallMenu({ profile, meal: startMeal, onBack, onSave }: { profile
         />
       </label>
       <p className="mt-2 text-[13px] text-ink/70">
-        Showing today's {meal.toLowerCase()} at {hall}.
+        Showing today's {meal.toLowerCase()} at {hall}.{usingSampleMenus && ' Sample menu: Supabase isn\'t connected.'}
       </p>
 
       <div className="mt-3 space-y-3">
-        {groups.length === 0 && <p className="rounded-3xl bg-white/70 p-5 text-center text-[14px] text-muted">{q ? `Nothing matches "${query.trim()}".` : `${hall} isn't serving ${meal.toLowerCase()} today.`}</p>}
+        {menu.status === 'loading' && (
+          <p className="rounded-3xl bg-white/70 p-5 text-center text-[14px] text-muted" role="status">
+            Loading {hall}'s menu…
+          </p>
+        )}
+        {menu.status === 'error' && (
+          <div className="rounded-3xl bg-white/70 p-5 text-center text-[14px] text-muted" role="alert">
+            <p>Couldn't load {hall}'s menu. Check your connection.</p>
+            <button type="button" onClick={menu.retry} className="mt-2 font-semibold text-c-blue">
+              Try again
+            </button>
+          </div>
+        )}
+        {menu.status === 'ready' && groups.length === 0 && (
+          <p className="rounded-3xl bg-white/70 p-5 text-center text-[14px] text-muted">
+            {q
+              ? `Nothing matches "${query.trim()}".`
+              : !HALLS_WITH_MENUS.includes(hall)
+                ? `We don't have ${hall}'s menu yet.`
+                : `No ${meal.toLowerCase()} menu for ${hall} today. It may not be posted yet, or ${hall} isn't serving ${meal.toLowerCase()}.`}
+          </p>
+        )}
         {groups.map(([station, items]) => (
           <div key={station} className="rounded-3xl bg-white px-4 pt-3 pb-1">
             <p className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">{station}</p>
             <ul className="divide-y divide-line">
               {items.map((row) => {
-                const on = picked.has(row.itemID)
+                const on = picked.has(row.key)
                 const n = rowNutrients(row)
                 const warn = allergensIn(row, profile.allergens)
+                const unknown = allergensUnknown(row, profile.allergens)
                 return (
-                  <li key={row.itemID} className="flex items-center gap-3 py-2.5">
+                  <li key={row.key} className="flex items-center gap-3 py-2.5">
                     <div className="min-w-0 flex-1">
-                      <p className="text-[15px] font-medium">{row.shortName}</p>
+                      <p className="text-[15px] font-medium">{rowName(row)}</p>
                       <p className="mt-0.5 text-[12px] text-muted tabular-nums">
                         {n.calories ?? '?'} kcal · P {n.protein ?? '?'}g · C {n.carbs ?? '?'}g · F {n.fat ?? '?'}g
                       </p>
                       {warn.length > 0 && <p className="mt-0.5 text-[12px] font-semibold text-c-red">Contains {warn.join(', ').toLowerCase()}</p>}
+                      {unknown.length > 0 && <p className="mt-0.5 text-[12px] font-semibold text-c-orange">{hall} doesn't list {unknown.join(', ').toLowerCase()} for this dish</p>}
                     </div>
                     <button
                       type="button"
                       onClick={() => toggle(row)}
                       aria-pressed={on}
-                      aria-label={on ? `Remove ${row.shortName}` : `Add ${row.shortName}`}
+                      aria-label={on ? `Remove ${rowName(row)}` : `Add ${rowName(row)}`}
                       className={`grid size-10 shrink-0 place-items-center rounded-full border-2 transition active:scale-90 ${on ? 'border-c-green bg-c-green text-white' : 'border-ink text-ink'}`}
                     >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

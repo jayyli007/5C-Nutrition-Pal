@@ -1,25 +1,23 @@
 import { useMemo, useState } from 'react'
 import { Card, Check, Flame, fmtNum, NutrientRings, Page, type Tab } from '../components/app'
-import { allergensIn, fitsDiet, getMenu, rowNutrients, type MenuRow } from '../menu'
-import { HALLS, MEALS, TRACKABLES, type Hall, type Meal } from '../onboarding'
+import { allergensIn, allergensUnknown, fitsDiet, getMealAllHalls, rowName, rowNutrients, useMenu, type MenuRow } from '../menu'
+import { MEALS, TRACKABLES, type Hall, type Meal } from '../onboarding'
 import { dayKey, newId, streak, sumNutrients, type AppState, type LogEntry } from '../store'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-/** Best dinner pick across the halls: safe for the user's allergens and diet, fits what's left of the calorie goal, most protein per calorie. */
-function tonightPick(state: AppState, eatenKcal: number): { hall: Hall; row: MenuRow } | undefined {
+/** Best dinner pick across the halls: known safe for the user's allergens and diet, fits what's left of the calorie goal, most protein per calorie. */
+function tonightPick(dinner: { hall: Hall; row: MenuRow }[], state: AppState, eatenKcal: number): { hall: Hall; row: MenuRow } | undefined {
   const { profile } = state
   const budget = Math.max(350, profile.goals.calories - eatenKcal)
   let best: { hall: Hall; row: MenuRow; score: number } | undefined
-  for (const hall of HALLS) {
-    for (const row of getMenu(hall, 'Dinner')) {
-      const n = rowNutrients(row)
-      const kcal = n.calories ?? 0
-      if (kcal < 250 || kcal > budget) continue
-      if (allergensIn(row, profile.allergens).length || !fitsDiet(row, profile.dietary)) continue
-      const score = (n.protein ?? 0) / kcal
-      if (!best || score > best.score) best = { hall, row, score }
-    }
+  for (const { hall, row } of dinner) {
+    const n = rowNutrients(row)
+    const kcal = n.calories ?? 0
+    if (kcal < 250 || kcal > budget) continue
+    if (allergensIn(row, profile.allergens).length || allergensUnknown(row, profile.allergens).length || !fitsDiet(row, profile.dietary)) continue
+    const score = (n.protein ?? 0) / kcal
+    if (!best || score > best.score) best = { hall, row, score }
   }
   return best
 }
@@ -48,7 +46,12 @@ export function Today({
   // One card per usual meal, plus any other meal already logged today.
   const cardMeals = MEALS.filter((m) => profile.usualMeals.includes(m) || todays.some((l) => l.meal === m))
   const dinnerLogged = todays.some((l) => l.meal === 'Dinner')
-  const pick = useMemo(() => (dinnerLogged ? undefined : tonightPick(state, totals.calories)), [state, dinnerLogged, totals.calories])
+  // Today's dinner menus from every hall. While loading, or if it fails or the scrape hasn't run, there's simply no pick.
+  const dinner = useMenu(() => getMealAllHalls('Dinner'), [today])
+  const pick = useMemo(
+    () => (dinnerLogged || dinner.status !== 'ready' ? undefined : tonightPick(dinner.rows, state, totals.calories)),
+    [dinner, state, dinnerLogged, totals.calories],
+  )
 
   return (
     <Page background={profile.background} tab="today" onTab={onTab}>
@@ -180,9 +183,9 @@ export function Today({
         <div className="mt-3 flex items-center gap-3 rounded-3xl bg-ink p-4 text-white">
           <div className="min-w-0 flex-1">
             <p className="text-[12px] font-semibold tracking-[0.08em] text-white/70 uppercase">Tonight at {pick.hall}</p>
-            <p className="mt-0.5 text-[17px] font-semibold">{pick.row.shortName}</p>
+            <p className="mt-0.5 text-[17px] font-semibold">{rowName(pick.row)}</p>
             <p className="mt-0.5 text-[13px] text-white/80">
-              {pick.row['Calories (kcal)']} kcal · {pick.row['Protein (g)']}g protein · fits your goal
+              {fmtNum(pick.row.calories ?? 0)} kcal · {fmtNum(pick.row.protein_g ?? 0)}g protein · fits your goal
             </p>
           </div>
           <button
@@ -193,7 +196,7 @@ export function Today({
                   id: newId(),
                   date: today,
                   meal: 'Dinner',
-                  name: pick.row.shortName,
+                  name: rowName(pick.row),
                   hall: pick.hall,
                   serving: pick.row.serving ?? undefined,
                   nutrients: rowNutrients(pick.row),
