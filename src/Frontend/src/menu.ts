@@ -34,13 +34,13 @@ export type MenuRow = {
   cholesterol_mg: number | null
   sodium_mg: number | null
   sugar_g: number | null
+  /**
+   * Bon Appétit halls only: 1 "Specials" (main dishes), 2 "Additional Favorites" (deli, grill basics, drinks),
+   * 3 "Condiments and Extras" (salad bar, cereal, toppings). Null for other halls, and missing until the tier
+   * column is added in Supabase.
+   */
+  tier?: number | null
 } & Record<FlagColumn, boolean | null> // null = the hall didn't say
-
-const COLUMNS =
-  'dining_hall,serve_date,meal,station,item_id,name,description,serving,' +
-  'calories,protein_g,carbs_g,fat_g,fiber_g,cholesterol_mg,sodium_mg,sugar_g,' +
-  'is_vegan,is_vegetarian,is_gluten_free,' +
-  ALLERGEN_COLUMNS.join(',')
 
 // ---- Names: the UI capitalizes, the database stores lowercase ---------------
 
@@ -48,6 +48,8 @@ const COLUMNS =
 export const dbHall = (hall: Hall) => hall.toLowerCase()
 /** UI meal name -> all_menu_items.meal. */
 export const dbMeal = (meal: Meal) => meal.toLowerCase()
+/** Every all_menu_items.meal value that belongs under a UI meal (Collins also serves a "continental breakfast"). */
+export const dbMeals = (meal: Meal): string[] => (meal === 'Breakfast' ? ['breakfast', 'continental breakfast'] : [dbMeal(meal)])
 
 /** Halls a scraper fills. The others (Oldenborg) are in the UI but have no menu data yet. */
 export const HALLS_WITH_MENUS: readonly Hall[] = ['Frary', 'Frank', 'Collins', 'Malott', 'Hoch', 'McConnell']
@@ -76,6 +78,10 @@ export function rowNutrients(row: MenuRow): Nutrients {
 
 export const rowName = (row: MenuRow) => row.name ?? 'Unnamed item'
 export const rowStation = (row: MenuRow) => row.station ?? 'Other'
+
+/** A main dish: Bon Appétit "Specials", or any item from a hall that doesn't rank its items. */
+export const isFeatured = (row: MenuRow) => row.tier == null || row.tier === 1
+const tierRank = (row: MenuRow) => row.tier ?? 1
 
 /** The user's allergen chips (onboarding names) -> allergen columns. */
 export const ALLERGEN_COLUMN: Record<string, AllergenColumn> = {
@@ -126,10 +132,11 @@ const PAGE = 1000 // PostgREST's default max rows per request
 
 type RawRow = Omit<MenuRow, 'key'>
 
-async function fetchRows(date: string, meal: string, hall?: string): Promise<RawRow[]> {
+async function fetchRows(date: string, meals: string[], hall?: string): Promise<RawRow[]> {
   const out: RawRow[] = []
   for (let from = 0; ; from += PAGE) {
-    let q = supabase!.from('all_menu_items').select(COLUMNS).eq('serve_date', date).eq('meal', meal)
+    // select('*') rather than a column list, so a column the database doesn't have yet (like tier) can't break the query.
+    let q = supabase!.from('all_menu_items').select('*').eq('serve_date', date).in('meal', meals)
     if (hall) q = q.eq('dining_hall', hall)
     const { data, error } = await q.order('dining_hall').order('station').order('name').range(from, from + PAGE - 1)
     if (error) throw new Error(error.message)
@@ -158,7 +165,7 @@ export function getMenu(hall: Hall, meal: Meal, date = new Date()): Promise<Menu
   if (!supabase) return Promise.resolve(sampleMenu(hall, meal, date))
   if (!HALLS_WITH_MENUS.includes(hall)) return Promise.resolve([])
   const day = dayKey(date)
-  return cached(`${day}|${meal}|${hall}`, async () => withKeys(await fetchRows(day, dbMeal(meal), dbHall(hall))))
+  return cached(`${day}|${meal}|${hall}`, async () => withKeys(await fetchRows(day, dbMeals(meal), dbHall(hall))))
 }
 
 /** Every hall's menu for one meal and day, as [UI hall name, rows]. */
@@ -166,7 +173,7 @@ export function getMealAllHalls(meal: Meal, date = new Date()): Promise<{ hall: 
   if (!supabase) return Promise.resolve(HALLS.flatMap((hall) => sampleMenu(hall, meal, date).map((row) => ({ hall, row }))))
   const day = dayKey(date)
   const byDb = new Map(HALLS.map((h) => [dbHall(h), h]))
-  return cached(`${day}|${meal}|*`, async () => withKeys(await fetchRows(day, dbMeal(meal)))).then((rows) =>
+  return cached(`${day}|${meal}|*`, async () => withKeys(await fetchRows(day, dbMeals(meal)))).then((rows) =>
     rows.flatMap((row) => {
       const hall = byDb.get(row.dining_hall)
       return hall ? [{ hall, row }] : []
@@ -195,7 +202,11 @@ export function useMenu<T>(load: () => Promise<T[]>, deps: unknown[]): MenuState
   return state
 }
 
-/** Rows grouped by station, hot stations first, then alphabetical; rows keep their order within a station. */
+/**
+ * Rows grouped by station. Stations with a main dish come first (so the salad bar and condiments sink to the
+ * bottom), then hot stations, then alphabetical. Within a station, main dishes come first, then by tier;
+ * otherwise rows keep their order.
+ */
 export function byStation(rows: MenuRow[]): [string, MenuRow[]][] {
   const groups = new Map<string, MenuRow[]>()
   for (const r of rows) groups.set(rowStation(r), [...(groups.get(rowStation(r)) ?? []), r])
@@ -203,7 +214,10 @@ export function byStation(rows: MenuRow[]): [string, MenuRow[]][] {
     const i = STATION_ORDER.indexOf(s)
     return i === -1 ? STATION_ORDER.length : i
   }
-  return [...groups].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
+  const noMain = (items: MenuRow[]) => Number(!items.some(isFeatured))
+  return [...groups]
+    .map(([s, items]) => [s, [...items].sort((a, b) => tierRank(a) - tierRank(b))] as [string, MenuRow[]])
+    .sort((a, b) => noMain(a[1]) - noMain(b[1]) || rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
 }
 
 // Hot food first, sides and sweets last. Real station names vary by hall; unknown ones sort alphabetically after these.

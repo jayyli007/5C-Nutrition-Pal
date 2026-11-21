@@ -1,17 +1,18 @@
 import { useMemo, useState } from 'react'
 import { Card, Check, Flame, fmtNum, NutrientRings, Page, type Tab } from '../components/app'
-import { allergensIn, allergensUnknown, fitsDiet, getMealAllHalls, rowName, rowNutrients, useMenu, type MenuRow } from '../menu'
+import { allergensIn, allergensUnknown, fitsDiet, getMealAllHalls, isFeatured, rowName, rowNutrients, useMenu, type MenuRow } from '../menu'
 import { MEALS, TRACKABLES, type Hall, type Meal } from '../onboarding'
 import { dayKey, newId, streak, sumNutrients, type AppState, type LogEntry } from '../store'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-/** Best dinner pick across the halls: known safe for the user's allergens and diet, fits what's left of the calorie goal, most protein per calorie. */
+/** Best dinner main dish across the halls: known safe for the user's allergens and diet, fits what's left of the calorie goal, most protein per calorie. */
 function tonightPick(dinner: { hall: Hall; row: MenuRow }[], state: AppState, eatenKcal: number): { hall: Hall; row: MenuRow } | undefined {
   const { profile } = state
   const budget = Math.max(350, profile.goals.calories - eatenKcal)
   let best: { hall: Hall; row: MenuRow; score: number } | undefined
   for (const { hall, row } of dinner) {
+    if (!isFeatured(row)) continue // a main dish, not a salad bar topping or a drink
     const n = rowNutrients(row)
     const kcal = n.calories ?? 0
     if (kcal < 250 || kcal > budget) continue

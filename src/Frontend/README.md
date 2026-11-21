@@ -49,6 +49,8 @@ Logs, My Foods and settings are saved in `localStorage` (`src/store.ts`); the pa
 
 `src/menu.ts` fetches menus (`getMenu` for one hall and meal, `getMealAllHalls` for the Tonight pick), caches them per day, and maps UI names (`Frary`, `Dinner`) to the lowercase values in the table. Allergen and diet flags can be null when a hall doesn't report them (McConnell lists no allergens): the menu then says the allergen isn't listed, and the Tonight pick skips the dish. Oldenborg has no scraper yet, and saturated fat isn't scraped, so neither shows menu data.
 
+Bon Appétit halls (Collins, Malott, McConnell) list every component, so a meal can have 250+ rows. Their `tier` column ranks them: 1 "Specials" (main dishes), 2 "Additional Favorites", 3 "Condiments and Extras". The menu shows main dishes first and folds the rest of each station under "N more items" (search shows everything); stations with no main dish, like the salad bar, sink to the bottom. Other halls have no tier, so all their items count as main dishes. Collins' "continental breakfast" shows under Breakfast.
+
 Open `/?demo` to fill three weeks of meals from the sample menus for previewing Today and Stats (this replaces saved logs).
 
 The logo lives in `public/` as `logo.svg` (used on sign-up and as the favicon) and `logo.png`, plus `apple-touch-icon.png`, `icon-*.png` and `manifest.webmanifest` for adding the app to a phone home screen.

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { BackTitle, Page, Segmented, SectionLabel } from '../components/app'
 import { Chip, PrimaryButton } from '../components/ui'
-import { allergensIn, allergensUnknown, byStation, fitsDiet, getMenu, HALLS_WITH_MENUS, rowName, rowNutrients, rowStation, useMenu, usingSampleMenus, type MenuRow } from '../menu'
+import { allergensIn, allergensUnknown, byStation, fitsDiet, getMenu, HALLS_WITH_MENUS, isFeatured, rowName, rowNutrients, rowStation, useMenu, usingSampleMenus, type MenuRow } from '../menu'
 import { HALLS, homeHall, MEALS, type Hall, type Meal } from '../onboarding'
 import { dayKey, newId, type LogEntry, type Profile } from '../store'
 
@@ -10,6 +10,8 @@ export function HallMenu({ profile, meal: startMeal, onBack, onSave }: { profile
   const [hall, setHall] = useState<Hall>(homeHall(profile.college))
   const [query, setQuery] = useState('')
   const [picked, setPicked] = useState<Map<string, { hall: Hall; row: MenuRow }>>(new Map())
+  // Stations whose "more items" are open, keyed by hall|meal|station.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const menu = useMenu(() => getMenu(hall, meal), [hall, meal])
   const rows = menu.status === 'ready' ? menu.rows : []
@@ -41,6 +43,36 @@ export function HallMenu({ profile, meal: startMeal, onBack, onSave }: { profile
         loggedAt: Date.now(),
       })),
     )
+
+  const item = (row: MenuRow) => {
+    const on = picked.has(row.key)
+    const n = rowNutrients(row)
+    const warn = allergensIn(row, profile.allergens)
+    const unknown = allergensUnknown(row, profile.allergens)
+    return (
+      <li key={row.key} className="flex items-center gap-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-medium">{rowName(row)}</p>
+          <p className="mt-0.5 text-[12px] text-muted tabular-nums">
+            {n.calories ?? '?'} kcal · P {n.protein ?? '?'}g · C {n.carbs ?? '?'}g · F {n.fat ?? '?'}g
+          </p>
+          {warn.length > 0 && <p className="mt-0.5 text-[12px] font-semibold text-c-red">Contains {warn.join(', ').toLowerCase()}</p>}
+          {unknown.length > 0 && <p className="mt-0.5 text-[12px] font-semibold text-c-orange">{hall} doesn't list {unknown.join(', ').toLowerCase()} for this dish</p>}
+        </div>
+        <button
+          type="button"
+          onClick={() => toggle(row)}
+          aria-pressed={on}
+          aria-label={on ? `Remove ${rowName(row)}` : `Add ${rowName(row)}`}
+          className={`grid size-10 shrink-0 place-items-center rounded-full border-2 transition active:scale-90 ${on ? 'border-c-green bg-c-green text-white' : 'border-ink text-ink'}`}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {on ? <path d="M20 6 9 17l-5-5" /> : <path d="M12 5v14M5 12h14" />}
+          </svg>
+        </button>
+      </li>
+    )
+  }
 
   const n = picked.size
   return (
@@ -108,43 +140,37 @@ export function HallMenu({ profile, meal: startMeal, onBack, onSave }: { profile
                 : `No ${meal.toLowerCase()} menu for ${hall} today. It may not be posted yet, or ${hall} isn't serving ${meal.toLowerCase()}.`}
           </p>
         )}
-        {groups.map(([station, items]) => (
-          <div key={station} className="rounded-3xl bg-white px-4 pt-3 pb-1">
-            <p className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">{station}</p>
-            <ul className="divide-y divide-line">
-              {items.map((row) => {
-                const on = picked.has(row.key)
-                const n = rowNutrients(row)
-                const warn = allergensIn(row, profile.allergens)
-                const unknown = allergensUnknown(row, profile.allergens)
-                return (
-                  <li key={row.key} className="flex items-center gap-3 py-2.5">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[15px] font-medium">{rowName(row)}</p>
-                      <p className="mt-0.5 text-[12px] text-muted tabular-nums">
-                        {n.calories ?? '?'} kcal · P {n.protein ?? '?'}g · C {n.carbs ?? '?'}g · F {n.fat ?? '?'}g
-                      </p>
-                      {warn.length > 0 && <p className="mt-0.5 text-[12px] font-semibold text-c-red">Contains {warn.join(', ').toLowerCase()}</p>}
-                      {unknown.length > 0 && <p className="mt-0.5 text-[12px] font-semibold text-c-orange">{hall} doesn't list {unknown.join(', ').toLowerCase()} for this dish</p>}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => toggle(row)}
-                      aria-pressed={on}
-                      aria-label={on ? `Remove ${rowName(row)}` : `Add ${rowName(row)}`}
-                      className={`grid size-10 shrink-0 place-items-center rounded-full border-2 transition active:scale-90 ${on ? 'border-c-green bg-c-green text-white' : 'border-ink text-ink'}`}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        {on ? <path d="M20 6 9 17l-5-5" /> : <path d="M12 5v14M5 12h14" />}
-                      </svg>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        ))}
+        {groups.map(([station, items]) => {
+          // While searching, show every match. Otherwise main dishes show and the rest fold under "more".
+          const main = q ? items : items.filter(isFeatured)
+          const extra = q ? [] : items.filter((r) => !isFeatured(r))
+          const openKey = `${hall}|${meal}|${station}`
+          const open = expanded.has(openKey)
+          return (
+            <div key={station} className="rounded-3xl bg-white px-4 pt-3 pb-1">
+              <p className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">{station}</p>
+              <ul className="divide-y divide-line">{(open ? [...main, ...extra] : main).map(item)}</ul>
+              {extra.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((s) => toggleIn(s, openKey))}
+                  aria-expanded={open}
+                  className={`w-full py-3 text-left text-[14px] font-semibold text-c-blue ${main.length || open ? 'border-t border-line' : ''}`}
+                >
+                  {open ? 'Show less' : main.length ? `${extra.length} more item${extra.length === 1 ? '' : 's'}` : `Show ${extra.length} item${extra.length === 1 ? '' : 's'}`}
+                </button>
+              )}
+            </div>
+          )
+        })}
       </div>
     </Page>
   )
+}
+
+function toggleIn(set: Set<string>, key: string): Set<string> {
+  const next = new Set(set)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  return next
 }

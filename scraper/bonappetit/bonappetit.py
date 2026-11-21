@@ -152,9 +152,12 @@ def parseItem(itemDict, diningHall):
         "Total Dietary Fiber (g)": nv(nutrition, "fiberContent"),
         "Total Sugars (g)": nv(nutrition, "sugarContent"),
         "Protein (g)": nv(nutrition, "proteinContent"),
-        "servedate": item["date"]
+        "servedate": item["date"],
+        # Bon Appetit's own ranking: 1 = "Specials" (main dishes), 2 = "Additional Favorites"
+        # (deli, grill basics, drinks), 3 = "Condiments and Extras" (salad bar, cereal, toppings)
+        "tier": item.get("tier"),
     }
-    NON_NUTRIENT = {"itemID", "category", "meal", "description", "shortName", "serving", "servedate"}
+    NON_NUTRIENT = {"itemID", "category", "meal", "description", "shortName", "serving", "servedate", "tier"}
     for k, v in info.items():
         if k not in NON_NUTRIENT:
             info[k] = lt_to_zero(v)
