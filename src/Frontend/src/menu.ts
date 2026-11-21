@@ -1,106 +1,246 @@
-// Mock dining hall menus, shaped like the scraper's Postgres tables (menu_items_frary, menu_items_collins, ...)
-// so swapping in the real database later only changes where rows come from.
+// Dining hall menus from Supabase's all_menu_items table (filled daily by scraper/menu_database.py).
+// Column names match SCHEMA in menu_database.py and scraper/all_menu_items.sql.
 //
-// Column names match scraper/bonappetit/bonappetit.py and scraper/frank_frary/pomona.py: nutrient values are
-// strings (the Bon Appétit tables store TEXT), and allergens and diets are boolean flag columns.
+// Without VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (local dev), the app uses the sample menus at the
+// bottom of this file instead, shaped the same way, and screens say they're samples.
 
+import { useEffect, useState } from 'react'
 import { HALLS, type Hall, type Meal, type TrackableId } from './onboarding'
 import { dayKey, type Nutrients } from './store'
+import { supabase } from './supabase'
 
-export const FLAG_COLUMNS = ['Vegan', 'Vegetarian', 'Gluten Free', 'Peanut', 'Tree Nut', 'Milk', 'Egg', 'Soy', 'Sesame', 'Fish', 'Shellfish', 'Wheat'] as const
-type Flag = (typeof FLAG_COLUMNS)[number]
+export const usingSampleMenus = supabase == null
 
-/** One row of a menu_items_<hall> table. */
+const ALLERGEN_COLUMNS = ['peanut', 'tree_nut', 'milk', 'egg', 'soy', 'sesame', 'fish', 'shellfish', 'wheat'] as const
+type AllergenColumn = (typeof ALLERGEN_COLUMNS)[number]
+type FlagColumn = AllergenColumn | 'is_vegan' | 'is_vegetarian' | 'is_gluten_free'
+
+/** One row of all_menu_items, plus `key`, a client-side id that's unique within one fetched menu. */
 export type MenuRow = {
-  itemID: string
-  location: string
-  category: string
-  meal: string
-  description: string
-  shortName: string
+  key: string
+  dining_hall: string
+  serve_date: string
+  meal: string | null
+  station: string | null
+  item_id: string | null
+  name: string | null
+  description: string | null
   serving: string | null
-  'Calories (kcal)': string | null
-  'Total Lipid/Fat (g)': string | null
-  'Saturated fatty acid (g)': string | null
-  'Sodium (mg)': string | null
-  'Carbohydrates (g)': string | null
-  'Total Dietary Fiber (g)': string | null
-  'Total Sugars (g)': string | null
-  'Protein (g)': string | null
-  servedate: string
-} & Partial<Record<Flag, boolean>>
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  fiber_g: number | null
+  cholesterol_mg: number | null
+  sodium_mg: number | null
+  sugar_g: number | null
+  /**
+   * Bon Appétit halls only: 1 "Specials" (main dishes), 2 "Additional Favorites" (deli, grill basics, drinks),
+   * 3 "Condiments and Extras" (salad bar, cereal, toppings). Null for other halls, and missing until the tier
+   * column is added in Supabase.
+   */
+  tier?: number | null
+} & Record<FlagColumn, boolean | null> // null = the hall didn't say
 
-/** Which scraper column holds each nutrient the app tracks. */
-const COLUMN_FOR: Record<TrackableId, keyof MenuRow> = {
-  calories: 'Calories (kcal)',
-  protein: 'Protein (g)',
-  carbs: 'Carbohydrates (g)',
-  fat: 'Total Lipid/Fat (g)',
-  fiber: 'Total Dietary Fiber (g)',
-  sugar: 'Total Sugars (g)',
-  sodium: 'Sodium (mg)',
-  satFat: 'Saturated fatty acid (g)',
-}
+// ---- Names: the UI capitalizes, the database stores lowercase ---------------
 
-/** Same rules as scraper/menu_database.py to_number: "<1" is 0, units are stripped, junk is null. */
-export function toNumber(value: unknown): number | null {
-  if (value == null) return null
-  if (typeof value === 'number') return value
-  const s = String(value).replace(/\s/g, '')
-  if (s.startsWith('<') || s.startsWith('lessthan')) return 0
-  const digits = s.replace(/[^0-9.]/g, '')
-  const n = Number.parseFloat(digits)
-  return Number.isFinite(n) ? n : null
+/** UI hall name -> all_menu_items.dining_hall. */
+export const dbHall = (hall: Hall) => hall.toLowerCase()
+/** UI meal name -> all_menu_items.meal. */
+export const dbMeal = (meal: Meal) => meal.toLowerCase()
+/** Every all_menu_items.meal value that belongs under a UI meal (Collins also serves a "continental breakfast"). */
+export const dbMeals = (meal: Meal): string[] => (meal === 'Breakfast' ? ['breakfast', 'continental breakfast'] : [dbMeal(meal)])
+
+/** Halls a scraper fills. The others (Oldenborg) are in the UI but have no menu data yet. */
+export const HALLS_WITH_MENUS: readonly Hall[] = ['Frary', 'Frank', 'Collins', 'Malott', 'Hoch', 'McConnell']
+
+// ---- Reading a row ---------------------------------------------------------
+
+/** Which column holds each nutrient the app tracks. Saturated fat isn't scraped yet, so it's never filled. */
+const COLUMN_FOR: Partial<Record<TrackableId, keyof MenuRow>> = {
+  calories: 'calories',
+  protein: 'protein_g',
+  carbs: 'carbs_g',
+  fat: 'fat_g',
+  fiber: 'fiber_g',
+  sugar: 'sugar_g',
+  sodium: 'sodium_mg',
 }
 
 export function rowNutrients(row: MenuRow): Nutrients {
   const out: Nutrients = {}
   for (const [id, col] of Object.entries(COLUMN_FOR) as [TrackableId, keyof MenuRow][]) {
-    const n = toNumber(row[col])
-    if (n != null) out[id] = n
+    const v = row[col]
+    if (typeof v === 'number' && Number.isFinite(v)) out[id] = v
   }
   return out
 }
 
-/** The user's allergen chips (onboarding names) -> scraper flag columns. */
-export const ALLERGEN_FLAG: Record<string, Flag> = {
-  Milk: 'Milk',
-  Eggs: 'Egg',
-  Peanuts: 'Peanut',
-  'Tree nuts': 'Tree Nut',
-  Fish: 'Fish',
-  Shellfish: 'Shellfish',
-  Wheat: 'Wheat',
-  Soy: 'Soy',
-  Sesame: 'Sesame',
+export const rowName = (row: MenuRow) => row.name ?? 'Unnamed item'
+export const rowStation = (row: MenuRow) => row.station ?? 'Other'
+
+/** A main dish: Bon Appétit "Specials", or any item from a hall that doesn't rank its items. */
+export const isFeatured = (row: MenuRow) => row.tier == null || row.tier === 1
+const tierRank = (row: MenuRow) => row.tier ?? 1
+
+/** The user's allergen chips (onboarding names) -> allergen columns. */
+export const ALLERGEN_COLUMN: Record<string, AllergenColumn> = {
+  Milk: 'milk',
+  Eggs: 'egg',
+  Peanuts: 'peanut',
+  'Tree nuts': 'tree_nut',
+  Fish: 'fish',
+  Shellfish: 'shellfish',
+  Wheat: 'wheat',
+  Soy: 'soy',
+  Sesame: 'sesame',
 }
 
 /** Allergens from the user's list that this dish contains. */
 export function allergensIn(row: MenuRow, allergens: string[]): string[] {
-  return allergens.filter((a) => ALLERGEN_FLAG[a] && row[ALLERGEN_FLAG[a]])
+  return allergens.filter((a) => ALLERGEN_COLUMN[a] && row[ALLERGEN_COLUMN[a]] === true)
 }
 
-/** Whether a dish fits every dietary preference we can check from the flags. */
+/** Allergens from the user's list that the hall doesn't report for this dish (null), so it might contain them. */
+export function allergensUnknown(row: MenuRow, allergens: string[]): string[] {
+  return allergens.filter((a) => ALLERGEN_COLUMN[a] && row[ALLERGEN_COLUMN[a]] == null)
+}
+
+/** Whether a dish is known to fit every dietary preference we can check. Unknown (null) counts as not fitting. */
 export function fitsDiet(row: MenuRow, dietary: string[]): boolean {
   return dietary.every((d) => {
     switch (d) {
       case 'Vegan':
-        return !!row.Vegan
+        return row.is_vegan === true
       case 'Vegetarian':
-        return !!(row.Vegetarian || row.Vegan)
+        return row.is_vegetarian === true || row.is_vegan === true
       case 'Pescatarian':
-        return !!(row.Vegetarian || row.Vegan || row.Fish || row.Shellfish)
+        return row.is_vegetarian === true || row.is_vegan === true || row.fish === true || row.shellfish === true
       case 'Gluten-free':
-        return !!row['Gluten Free']
+        return row.is_gluten_free === true
       case 'Dairy-free':
-        return !row.Milk
+        return row.milk === false
       default:
         return true // Halal and Kosher aren't in the menu data yet.
     }
   })
 }
 
-// ---- Mock data -------------------------------------------------------------
+// ---- Fetching --------------------------------------------------------------
+
+const PAGE = 1000 // PostgREST's default max rows per request
+
+type RawRow = Omit<MenuRow, 'key'>
+
+async function fetchRows(date: string, meals: string[], hall?: string): Promise<RawRow[]> {
+  const out: RawRow[] = []
+  for (let from = 0; ; from += PAGE) {
+    // select('*') rather than a column list, so a column the database doesn't have yet (like tier) can't break the query.
+    let q = supabase!.from('all_menu_items').select('*').eq('serve_date', date).in('meal', meals)
+    if (hall) q = q.eq('dining_hall', hall)
+    const { data, error } = await q.order('dining_hall').order('station').order('name').range(from, from + PAGE - 1)
+    if (error) throw new Error(error.message)
+    out.push(...(data as unknown as RawRow[]))
+    if (!data || data.length < PAGE) return out
+  }
+}
+
+const withKeys = (rows: RawRow[]): MenuRow[] => rows.map((r, i) => ({ ...r, key: `${r.dining_hall}|${r.meal}|${r.item_id ?? ''}|${r.name ?? ''}|${i}` }))
+
+// Cached per date + meal (+ hall) so switching chips back and forth doesn't refetch. Failed fetches are dropped so Retry works.
+const cache = new Map<string, Promise<MenuRow[]>>()
+
+function cached(key: string, load: () => Promise<MenuRow[]>): Promise<MenuRow[]> {
+  let p = cache.get(key)
+  if (!p) {
+    p = load()
+    cache.set(key, p)
+    p.catch(() => cache.delete(key))
+  }
+  return p
+}
+
+/** One hall's menu for one meal and day. */
+export function getMenu(hall: Hall, meal: Meal, date = new Date()): Promise<MenuRow[]> {
+  if (!supabase) return Promise.resolve(sampleMenu(hall, meal, date))
+  if (!HALLS_WITH_MENUS.includes(hall)) return Promise.resolve([])
+  const day = dayKey(date)
+  return cached(`${day}|${meal}|${hall}`, async () => withKeys(await fetchRows(day, dbMeals(meal), dbHall(hall))))
+}
+
+/** Every hall's menu for one meal and day, as [UI hall name, rows]. */
+export function getMealAllHalls(meal: Meal, date = new Date()): Promise<{ hall: Hall; row: MenuRow }[]> {
+  if (!supabase) return Promise.resolve(HALLS.flatMap((hall) => sampleMenu(hall, meal, date).map((row) => ({ hall, row }))))
+  const day = dayKey(date)
+  const byDb = new Map(HALLS.map((h) => [dbHall(h), h]))
+  return cached(`${day}|${meal}|*`, async () => withKeys(await fetchRows(day, dbMeals(meal)))).then((rows) =>
+    rows.flatMap((row) => {
+      const hall = byDb.get(row.dining_hall)
+      return hall ? [{ hall, row }] : []
+    }),
+  )
+}
+
+export type MenuState<T> = { status: 'loading' } | { status: 'error'; message: string; retry: () => void } | { status: 'ready'; rows: T[] }
+
+/** Load a menu in a component: loading, then ready or error (with retry). Reloads when `deps` change. */
+export function useMenu<T>(load: () => Promise<T[]>, deps: unknown[]): MenuState<T> {
+  const [state, setState] = useState<MenuState<T>>({ status: 'loading' })
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    let live = true
+    setState({ status: 'loading' })
+    load().then(
+      (rows) => live && setState({ status: 'ready', rows }),
+      (e: unknown) => live && setState({ status: 'error', message: e instanceof Error ? e.message : String(e), retry: () => setAttempt((n) => n + 1) }),
+    )
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, attempt])
+  return state
+}
+
+/**
+ * Rows grouped by station. Stations with a main dish come first (so the salad bar and condiments sink to the
+ * bottom), then hot stations, then alphabetical. Within a station, main dishes come first, then by tier;
+ * otherwise rows keep their order.
+ */
+export function byStation(rows: MenuRow[]): [string, MenuRow[]][] {
+  const groups = new Map<string, MenuRow[]>()
+  for (const r of rows) groups.set(rowStation(r), [...(groups.get(rowStation(r)) ?? []), r])
+  const rank = (s: string) => {
+    const i = STATION_ORDER.indexOf(s)
+    return i === -1 ? STATION_ORDER.length : i
+  }
+  const noMain = (items: MenuRow[]) => Number(!items.some(isFeatured))
+  return [...groups]
+    .map(([s, items]) => [s, [...items].sort((a, b) => tierRank(a) - tierRank(b))] as [string, MenuRow[]])
+    .sort((a, b) => noMain(a[1]) - noMain(b[1]) || rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
+}
+
+// Hot food first, sides and sweets last. Real station names vary by hall; unknown ones sort alphabetically after these.
+const STATION_ORDER = ['Breakfast', 'Grill', 'Mainline', 'Wok', 'Pasta', 'Pizza', 'Deli', 'Soup', 'Vegan', 'Salad bar', 'Bakery']
+
+// ---- Sample menus (no Supabase configured, and /?demo history) --------------
+
+type Flag = 'Vegan' | 'Vegetarian' | 'Gluten Free' | 'Peanut' | 'Tree Nut' | 'Milk' | 'Egg' | 'Soy' | 'Sesame' | 'Fish' | 'Shellfish' | 'Wheat'
+
+const FLAG_COLUMN: Record<Flag, FlagColumn> = {
+  Vegan: 'is_vegan',
+  Vegetarian: 'is_vegetarian',
+  'Gluten Free': 'is_gluten_free',
+  Peanut: 'peanut',
+  'Tree Nut': 'tree_nut',
+  Milk: 'milk',
+  Egg: 'egg',
+  Soy: 'soy',
+  Sesame: 'sesame',
+  Fish: 'fish',
+  Shellfish: 'shellfish',
+  Wheat: 'wheat',
+}
 
 // name, station, meals (B breakfast, R brunch, L lunch, D dinner), kcal, protein, carbs, fat, fiber, sugar, sodium, sat fat, serving, flags
 type Dish = [string, string, string, number, number, number, number, number, number, number, number, string, Flag[]]
@@ -155,50 +295,51 @@ function hash(s: string): number {
   return h >>> 0
 }
 
-const fmt = (n: number) => String(n)
-
-function toRow(dish: Dish, hall: Hall, meal: Meal, i: number, servedate: string): MenuRow {
-  const [name, station, , kcal, protein, carbs, fat, fiber, sugar, sodium, satFat, serving, flags] = dish
+function sampleRow(dish: Dish, hall: Hall, meal: Meal, i: number, servedate: string): MenuRow {
+  const [name, station, , kcal, protein, carbs, fat, fiber, sugar, sodium, , serving, flags] = dish
   const row: MenuRow = {
-    itemID: String(100000 + HALLS.indexOf(hall) * 10000 + i * 10 + Object.keys(MEAL_CODE).indexOf(meal)),
-    location: `${hall} Dining`,
-    category: station,
-    meal,
-    description: '',
-    shortName: name,
+    key: `sample|${hall}|${meal}|${i}`,
+    dining_hall: dbHall(hall),
+    serve_date: servedate,
+    meal: dbMeal(meal),
+    station,
+    item_id: String(100000 + HALLS.indexOf(hall) * 10000 + i * 10 + Object.keys(MEAL_CODE).indexOf(meal)),
+    name,
+    description: null,
     serving,
-    'Calories (kcal)': fmt(kcal),
-    'Total Lipid/Fat (g)': fmt(fat),
-    'Saturated fatty acid (g)': fmt(satFat),
-    'Sodium (mg)': fmt(sodium),
-    'Carbohydrates (g)': fmt(carbs),
-    'Total Dietary Fiber (g)': fmt(fiber),
-    'Total Sugars (g)': fmt(sugar),
-    'Protein (g)': fmt(protein),
-    servedate,
+    calories: kcal,
+    protein_g: protein,
+    carbs_g: carbs,
+    fat_g: fat,
+    fiber_g: fiber,
+    cholesterol_mg: null,
+    sodium_mg: sodium,
+    sugar_g: sugar,
+    // The sample data lists every allergen and diet, so anything not flagged is a known "no".
+    is_vegan: false,
+    is_vegetarian: false,
+    is_gluten_free: false,
+    peanut: false,
+    tree_nut: false,
+    milk: false,
+    egg: false,
+    soy: false,
+    sesame: false,
+    fish: false,
+    shellfish: false,
+    wheat: false,
   }
-  for (const f of flags) row[f] = true
+  for (const f of flags) row[FLAG_COLUMN[f]] = true
   return row
 }
 
-/** Today's menu for one hall and meal, as rows from that hall's table. */
-export function getMenu(hall: Hall, meal: Meal, date = new Date()): MenuRow[] {
-  const servedate = dayKey(date).replace(/-/g, '')
-  const seed = `${hall}|${servedate}`
+/** Sample menu for one hall and meal. Synchronous, for the /?demo history and for running without Supabase. */
+export function sampleMenu(hall: Hall, meal: Meal, date = new Date()): MenuRow[] {
+  const servedate = dayKey(date)
+  const seed = `${hall}|${servedate.replace(/-/g, '')}`
   return DISHES.map((d, i) => [d, i] as const)
     .filter(([d]) => d[2].includes(MEAL_CODE[meal]))
     // Frary keeps the three dishes from the screen flow board so the demo matches it.
     .filter(([d]) => (hall === 'Frary' && ['Chicken shawarma', 'Black bean burger', 'Quinoa salad'].includes(d[0])) || hash(seed + d[0]) % 3 !== 0)
-    .map(([d, i]) => toRow(d, hall, meal, i, servedate))
-}
-
-// Hot food first, sides and sweets last.
-const STATION_ORDER = ['Breakfast', 'Grill', 'Mainline', 'Wok', 'Pasta', 'Pizza', 'Deli', 'Soup', 'Vegan', 'Salad bar', 'Bakery']
-
-/** Rows grouped by station, hot stations first; rows keep their order within a station. */
-export function byStation(rows: MenuRow[]): [string, MenuRow[]][] {
-  const groups = new Map<string, MenuRow[]>()
-  for (const r of rows) groups.set(r.category, [...(groups.get(r.category) ?? []), r])
-  const rank = (s: string) => (STATION_ORDER.indexOf(s) + STATION_ORDER.length + 1) % (STATION_ORDER.length + 1)
-  return [...groups].sort((a, b) => rank(a[0]) - rank(b[0]))
+    .map(([d, i]) => sampleRow(d, hall, meal, i, servedate))
 }

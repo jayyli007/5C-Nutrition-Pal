@@ -106,6 +106,7 @@ SCHEMA = {
     "fish": "boolean",
     "shellfish": "boolean",
     "wheat": "boolean",
+    "tier": "smallint",          # Bon Appetit only: 1 specials, 2 additional favorites, 3 condiments/extras; None elsewhere
 }
 
 # shared column -> the key the scrapers use
@@ -258,6 +259,12 @@ def flags_for(record, hall, labels):
             "is_gluten_free": gluten_free, **allergens}
 
 
+def to_tier(value):
+    """Bon Appetit's tier as 1, 2 or 3; anything else (other halls, junk) is None."""
+    n = to_number(str(value)) if value is not None else None
+    return int(n) if n in (1, 2, 3) else None
+
+
 def to_row(record, labels=None):
     """Turn one parsed scraper record into a list of standard rows, one per meal.
 
@@ -286,6 +293,7 @@ def to_row(record, labels=None):
         "serving": clean_text(record.get("serving")),
         **nutrients,
         **flags_for(record, hall, labels),
+        "tier": to_tier(record.get("tier")),
     }
 
     meals = record.get("meal")

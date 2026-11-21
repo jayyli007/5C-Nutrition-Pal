@@ -1,6 +1,6 @@
-// Sample history for previewing the app (open /?demo). Replaces any logs already saved.
+// Sample history for previewing the app (open /?demo), built from the sample menus in menu.ts. Replaces any logs already saved.
 
-import { getMenu, rowNutrients } from './menu'
+import { rowName, rowNutrients, sampleMenu } from './menu'
 import { HALLS, homeHall, type Hall, type Meal } from './onboarding'
 import { addDays, dayKey, mealForNow, newId, type AppState, type LogEntry } from './store'
 
@@ -27,11 +27,11 @@ export function seedDemo(state: AppState): AppState {
         return
       }
       const hall: Hall = rand() < 0.5 ? home : HALLS[Math.floor(rand() * HALLS.length)]
-      const menu = getMenu(hall, meal, date)
+      const menu = sampleMenu(hall, meal, date)
       const count = meal === 'Breakfast' ? 2 : 2 + Math.floor(rand() * 2)
       for (let i = 0; i < count && menu.length; i++) {
         const row = menu[Math.floor(rand() * menu.length)]
-        logs.push({ id: newId(), date: dayKey(date), meal, name: row.shortName, hall, serving: row.serving ?? undefined, nutrients: rowNutrients(row), loggedAt: date.getTime() })
+        logs.push({ id: newId(), date: dayKey(date), meal, name: rowName(row), hall, serving: row.serving ?? undefined, nutrients: rowNutrients(row), loggedAt: date.getTime() })
       }
     })
   }

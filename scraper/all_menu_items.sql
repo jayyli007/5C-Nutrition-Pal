@@ -33,7 +33,11 @@ alter table public.all_menu_items
   add column if not exists sesame         boolean,
   add column if not exists fish           boolean,
   add column if not exists shellfish      boolean,
-  add column if not exists wheat          boolean;
+  add column if not exists wheat          boolean,
+  -- Bon Appetit halls only (collins, malott, mcconnell): 1 = "Specials" (main dishes),
+  -- 2 = "Additional Favorites" (deli, grill basics, drinks), 3 = "Condiments and Extras"
+  -- (salad bar, cereal, toppings). Null for the other halls. The app shows tier 1 first.
+  add column if not exists tier           smallint;
 
 -- the app almost always asks "this date, maybe this hall"
 create index if not exists all_menu_items_date_hall_idx
@@ -64,12 +68,12 @@ begin
     dining_hall, serve_date, meal, station, item_id, name, description, serving,
     calories, protein_g, carbs_g, fat_g, fiber_g, cholesterol_mg, sodium_mg, sugar_g,
     is_vegan, is_vegetarian, is_gluten_free,
-    peanut, tree_nut, milk, egg, soy, sesame, fish, shellfish, wheat)
+    peanut, tree_nut, milk, egg, soy, sesame, fish, shellfish, wheat, tier)
   select
     p_dining_hall, p_serve_date, meal, station, item_id, name, description, serving,
     calories, protein_g, carbs_g, fat_g, fiber_g, cholesterol_mg, sodium_mg, sugar_g,
     is_vegan, is_vegetarian, is_gluten_free,
-    peanut, tree_nut, milk, egg, soy, sesame, fish, shellfish, wheat
+    peanut, tree_nut, milk, egg, soy, sesame, fish, shellfish, wheat, tier
   from jsonb_populate_recordset(null::all_menu_items, p_rows);
 
   get diagnostics inserted = row_count;
