@@ -59,10 +59,6 @@ export default function App() {
           data={draft}
           update={(p) => setDraft((d) => ({ ...d, ...p }))}
           onNext={() => go({ name: 'onboarding', step: 1 })}
-          onLogIn={() => {
-            setState((s) => ({ ...s, signedIn: true }))
-            go({ name: 'today' })
-          }}
         />
       )
     case 'onboarding': {

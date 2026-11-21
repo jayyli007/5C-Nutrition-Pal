@@ -10,13 +10,10 @@ export function SignUp({
   data,
   update,
   onNext,
-  onLogIn,
 }: {
   data: OnboardingData
   update: (p: Partial<OnboardingData>) => void
   onNext: () => void
-  /** "I already have an account": skip onboarding and open Today. */
-  onLogIn: () => void
 }) {
   const [touched, setTouched] = useState(false)
   const emailOk = isValidEmail(data.email)
@@ -39,9 +36,6 @@ export function SignUp({
             <PrimaryButton type="submit" disabled={touched && !valid}>
               Create account
             </PrimaryButton>
-            <button type="button" onClick={onLogIn} className="mt-4 block w-full text-center text-[15px] font-medium text-c-blue">
-              I already have an account: log in
-            </button>
           </>
         }
       >
